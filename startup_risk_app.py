@@ -555,9 +555,11 @@ def recommend_products(risk_scores: dict, sector: str, team_size: int,
     for key in SECTOR_OVERRIDES.get(sector, []):
         scored = [(k, s + 25 if k == key else s) for k, s in scored]
 
-    # Funding-stage overrides
+    # Funding-stage overrides — D&O is investor-mandatory at Series A+;
+    # boost is raised to +30 so it survives alongside multiple property overrides
+    # in physical sectors (D2C, Agritech, Logistics) where +15 was insufficient.
     if funding_stage in ("Series A", "Series B+"):
-        scored = [(k, s + 15 if k == "dno_liability" else s) for k, s in scored]
+        scored = [(k, s + 30 if k == "dno_liability" else s) for k, s in scored]
 
     # Team-size overrides
     if team_size >= 10:
@@ -574,7 +576,7 @@ def recommend_products(risk_scores: dict, sector: str, team_size: int,
     for key, score in top:
         product = PRODUCT_CATALOG[key].copy()
         product["score"] = round(score, 1)
-        product["priority"] = priority_label(score)
+        product["priority"] = priority_label(product["score"])  # label from rounded score to avoid boundary drift
         results.append(product)
     return results
 
