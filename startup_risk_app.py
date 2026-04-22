@@ -15,6 +15,11 @@ Author: ICICI Lombard Intern Project (Proof of Concept)
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
+from risk_engine import (
+    SECTOR_PROFILES,
+    compute_risk_scores,
+    recommend_products,
+)
 
 # =============================================================================
 # PAGE CONFIGURATION — first Streamlit call, controls tab title and layout
@@ -511,474 +516,19 @@ st.markdown(
 
 
 # =============================================================================
-# KNOWLEDGE BASE — ICICI Lombard products mapped to startup-relevant risk types
+# UI HELPERS
 # =============================================================================
-PRODUCT_CATALOG = {
-    "cyber_liability": {
-        "name": "Cyber Liability Insurance",
-        "il_product": "Commercial Cyber Liability / I-Elite Group Cyber Liability Insurance",
-        "what_it_covers": (
-            "Pays for costs when your systems get hacked, customer data leaks, "
-            "or a ransomware attack hits your servers. Covers forensic investigation, "
-            "legal defence, customer notification, regulatory fines, and business "
-            "interruption losses."
-        ),
-        "nudge": (
-            "If a hacker steals your customer data tomorrow, you could face lawsuits, "
-            "DPDP Act penalties, and months of downtime — this policy is what keeps "
-            "your startup from shutting down."
-        ),
-        "best_for": "SaaS, fintech, healthtech, edtech, D2C with customer data.",
-    },
-    "dno_liability": {
-        "name": "Directors & Officers (D&O) Liability",
-        "il_product": "Directors and Officers Liability",
-        "what_it_covers": (
-            "Protects founders, directors, and senior managers personally if they "
-            "get sued over business decisions — by investors, employees, regulators, "
-            "or competitors. Covers legal defence and settlements."
-        ),
-        "nudge": (
-            "The moment you take VC money, investors often require this. If a deal "
-            "goes wrong or an employee sues the company, your personal savings and "
-            "home are on the line without it."
-        ),
-        "best_for": "Any funded startup, especially post-Seed with institutional investors.",
-    },
-    "professional_indemnity": {
-        "name": "Professional Indemnity / E&O Insurance",
-        "il_product": "Professional Indemnity (Technology) Insurance",
-        "what_it_covers": (
-            "Covers claims from clients who say your software, service, or advice "
-            "caused them financial loss — due to a bug, outage, wrong recommendation, "
-            "or missed deadline. Pays legal costs and damages."
-        ),
-        "nudge": (
-            "If your app has a bug that causes a client to lose money, they can sue "
-            "you. Enterprise customers now demand this before signing contracts."
-        ),
-        "best_for": "SaaS, IT services, consultancies, fintech platforms, AI/ML products.",
-    },
-    "employee_health": {
-        "name": "Group Health Insurance",
-        "il_product": "Group Health Insurance / Group Health (Floater) Insurance",
-        "what_it_covers": (
-            "Medical cover for your employees and their families — hospitalization, "
-            "day-care procedures, maternity, and more. Builds trust and helps you "
-            "hire and retain talent."
-        ),
-        "nudge": (
-            "Top engineers compare health benefits before joining. A ₹5 lakh family "
-            "floater often costs less than one month's salary and dramatically "
-            "improves retention."
-        ),
-        "best_for": "Every startup with 5+ employees.",
-    },
-    "group_pa": {
-        "name": "Group Personal Accident",
-        "il_product": "Group Personal Accident",
-        "what_it_covers": (
-            "One-time payout to the employee or family if there is an accidental "
-            "injury, disability, or death — even outside working hours. Very "
-            "affordable per head."
-        ),
-        "nudge": (
-            "Field staff, delivery riders, sales teams travel constantly. For the "
-            "price of a coffee per employee per month, you show them you care."
-        ),
-        "best_for": "Logistics, field-sales, agritech, manufacturing, any startup with travel.",
-    },
-    "employees_comp": {
-        "name": "Workmen's Compensation / Employee's Compensation",
-        "il_product": "Employer's Liability / Workmen's Compensation Insurance",
-        "what_it_covers": (
-            "Legally mandated under the Employees' Compensation Act for many "
-            "categories of workers. Pays compensation if an employee is injured or "
-            "dies while doing their job."
-        ),
-        "nudge": (
-            "If a warehouse worker or delivery partner is injured on duty, the law "
-            "holds you liable. This converts an unpredictable lawsuit into a fixed, "
-            "small premium."
-        ),
-        "best_for": "Logistics, cleantech, D2C with warehouses, agritech, any physical ops.",
-    },
-    "property_fire": {
-        "name": "Fire & Allied Perils / Property Insurance",
-        "il_product": "ICICI Lombard Fire & Allied Perils Insurance Policy / MSME Suraksha Kavach",
-        "what_it_covers": (
-            "Covers your office, warehouse, equipment, and inventory against fire, "
-            "lightning, floods, earthquakes, and burglary. Includes rebuilding costs "
-            "and lost business income while you recover."
-        ),
-        "nudge": (
-            "One warehouse fire can wipe out six months of inventory. If you stock "
-            "physical goods or run a lab, this is non-negotiable."
-        ),
-        "best_for": "D2C brands, cleantech, manufacturing, deeptech labs, agritech.",
-    },
-    "business_edge": {
-        "name": "Business Edge (Comprehensive Business Package)",
-        "il_product": "Business Edge Policy / Business Prime Policy",
-        "what_it_covers": (
-            "A single package combining fire, burglary, money-in-transit, machinery "
-            "breakdown, and public liability — designed for small and medium "
-            "businesses. Simpler to manage than buying each separately."
-        ),
-        "nudge": (
-            "One policy, one premium, one renewal date. Perfect for a growing "
-            "startup that wants real cover without juggling five insurance documents."
-        ),
-        "best_for": "Growth-stage startups with physical offices or light manufacturing.",
-    },
-    "public_liability": {
-        "name": "Public Liability Insurance",
-        "il_product": "Commercial General Liability / Public Liability (Industrial or Non-Industrial)",
-        "what_it_covers": (
-            "Pays if a third party — customer, visitor, supplier — is injured on "
-            "your premises, or if your product or operation damages someone's "
-            "property. Covers legal costs and court-awarded damages."
-        ),
-        "nudge": (
-            "If a delivery customer slips in your warehouse or your product causes "
-            "property damage, lawsuits can run into crores. This is the shield."
-        ),
-        "best_for": "D2C, logistics, cleantech, events, hospitality-tech, physical retail.",
-    },
-    "product_liability": {
-        "name": "Product Liability Insurance",
-        "il_product": "Product Liability (Commercial or Retail)",
-        "what_it_covers": (
-            "Covers you if your manufactured product causes injury, illness, or "
-            "damage after a customer buys it. Includes product recall, legal defence, "
-            "and settlement costs."
-        ),
-        "nudge": (
-            "If a batch of your D2C wellness gummies makes customers sick, the "
-            "recall and lawsuits can finish the company. This is your survival kit."
-        ),
-        "best_for": "D2C brands, healthtech devices, food-tech, cleantech hardware.",
-    },
-    "marine_transit": {
-        "name": "Marine Transit / Inland Transit Insurance",
-        "il_product": "Marine Inland Transit Insurance / Marine Export-Import",
-        "what_it_covers": (
-            "Covers goods while they move — by road, rail, sea, or air. Protects "
-            "against theft, accidents, and damage in transit, whether it's raw "
-            "material coming in or products going out."
-        ),
-        "nudge": (
-            "Every truckload is exposed. One accident can mean lakhs in lost "
-            "inventory — this is standard for anyone who ships physical goods."
-        ),
-        "best_for": "D2C, logistics, agritech, cleantech, manufacturing startups.",
-    },
-    "key_person": {
-        "name": "Key Person Insurance",
-        "il_product": "Mapped via Group Personal Accident + term-life partnerships",
-        "what_it_covers": (
-            "Financial cushion for the company if a founder or critical team member "
-            "dies or is permanently disabled. Helps the business survive the "
-            "transition, pay off debt, or find a replacement."
-        ),
-        "nudge": (
-            "Investors increasingly ask for this. If your sole technical founder is "
-            "hit by a bus, this cash keeps the lights on while you rebuild."
-        ),
-        "best_for": "Founder-dependent startups, deeptech, single-CTO companies.",
-    },
-    "employment_practices": {
-        "name": "Employment Practices Liability (EPL)",
-        "il_product": "Employment Practices Liability (Commercial or Retail)",
-        "what_it_covers": (
-            "Covers lawsuits from employees alleging wrongful termination, "
-            "harassment, discrimination, or unfair pay. Pays legal defence and "
-            "settlements."
-        ),
-        "nudge": (
-            "With POSH Act and labour codes, HR complaints are rising fast. One "
-            "tribunal case can drain ₹20–50 lakhs in fees alone."
-        ),
-        "best_for": "Any startup with 10+ employees, especially post-Series A.",
-    },
-    "crime_fidelity": {
-        "name": "Crime / Fidelity Insurance",
-        "il_product": "Fidelity Insurance / Employee Dishonesty Liability",
-        "what_it_covers": (
-            "Covers financial loss if an employee commits fraud, theft, or "
-            "embezzlement. Also covers external crime like vendor impersonation "
-            "scams and fraudulent fund transfers."
-        ),
-        "nudge": (
-            "UPI frauds and insider theft are the fastest-growing startup losses. "
-            "One rogue finance hire can empty your runway."
-        ),
-        "best_for": "Fintech, D2C, any startup handling cash or payments.",
-    },
-    "gadget_equipment": {
-        "name": "Gadget & Electronic Equipment Insurance",
-        "il_product": "Gadget Insurance / Electronic Equipment Insurance",
-        "what_it_covers": (
-            "Covers laptops, phones, servers, specialized electronics against "
-            "accidental damage, theft, and breakdown. Useful for distributed or "
-            "remote teams."
-        ),
-        "nudge": (
-            "A remote team of 30 means 30 laptops in 30 homes. Replacing even 10% "
-            "per year adds up — this converts it into a small predictable premium."
-        ),
-        "best_for": "Remote-first SaaS, deeptech with specialised equipment.",
-    },
-    "clinical_trials": {
-        "name": "Clinical Trials Liability",
-        "il_product": "Clinical Trials Liability (Commercial or Retail)",
-        "what_it_covers": (
-            "Mandatory for human clinical trials in India. Covers liability if "
-            "trial participants are injured or suffer adverse effects."
-        ),
-        "nudge": (
-            "You cannot legally run a trial without it. CDSCO will not approve your "
-            "protocol if this is missing."
-        ),
-        "best_for": "Healthtech, biotech, pharma, medical device startups.",
-    },
-}
-
-
-# =============================================================================
-# SECTOR PROFILES — baseline risk weightings per sector (0 = low, 10 = very high)
-# =============================================================================
-SECTOR_PROFILES = {
-    "SaaS / Enterprise Software": {
-        "cyber": 8, "liability": 6, "key_person": 5, "property": 2, "compliance": 5,
-        "emoji": "💻",
-        "description": "Digital-first, customer data heavy, contract-driven.",
-    },
-    "Fintech": {
-        "cyber": 10, "liability": 8, "key_person": 6, "property": 3, "compliance": 10,
-        "emoji": "💳",
-        "description": "RBI/SEBI regulated, high cyber exposure, fraud-prone.",
-    },
-    "Healthtech": {
-        "cyber": 9, "liability": 9, "key_person": 6, "property": 5, "compliance": 10,
-        "emoji": "🏥",
-        "description": "Patient data, clinical accuracy, DPDP + health regs.",
-    },
-    "D2C / Consumer Brands": {
-        "cyber": 5, "liability": 8, "key_person": 4, "property": 8, "compliance": 6,
-        "emoji": "🛍️",
-        "description": "Inventory, warehousing, product recall, marketplace risk.",
-    },
-    "Deeptech / AI / Robotics": {
-        "cyber": 7, "liability": 7, "key_person": 9, "property": 7, "compliance": 5,
-        "emoji": "🤖",
-        "description": "IP-heavy, founder-critical, specialised equipment.",
-    },
-    "Edtech": {
-        "cyber": 7, "liability": 5, "key_person": 5, "property": 3, "compliance": 6,
-        "emoji": "📚",
-        "description": "Minor data, content liability, EPL exposure from scaling ops.",
-    },
-    "Agritech": {
-        "cyber": 4, "liability": 6, "key_person": 5, "property": 8, "compliance": 5,
-        "emoji": "🌾",
-        "description": "Rural logistics, farm inputs, crop risk, transit exposure.",
-    },
-    "Cleantech / Climatetech": {
-        "cyber": 5, "liability": 7, "key_person": 6, "property": 9, "compliance": 7,
-        "emoji": "🌱",
-        "description": "Hardware, installations, pollution + public liability.",
-    },
-    "Logistics / Mobility": {
-        "cyber": 6, "liability": 9, "key_person": 4, "property": 8, "compliance": 7,
-        "emoji": "🚚",
-        "description": "Fleet, drivers, goods-in-transit, public liability central.",
-    },
-    "Legaltech": {
-        "cyber": 7, "liability": 8, "key_person": 5, "property": 2, "compliance": 7,
-        "emoji": "⚖️",
-        "description": "Professional advice liability, confidential data.",
-    },
-    "HRtech": {
-        "cyber": 8, "liability": 6, "key_person": 5, "property": 2, "compliance": 7,
-        "emoji": "👥",
-        "description": "Employee PII, payroll data, DPDP exposure.",
-    },
-    "Gaming / Media / Content": {
-        "cyber": 6, "liability": 6, "key_person": 5, "property": 3, "compliance": 6,
-        "emoji": "🎮",
-        "description": "IP, content liability, fantasy/real-money regulation.",
-    },
-    "Foodtech / Cloud Kitchen": {
-        "cyber": 4, "liability": 9, "key_person": 4, "property": 8, "compliance": 7,
-        "emoji": "🍔",
-        "description": "FSSAI, food safety lawsuits, kitchen property risk.",
-    },
-}
-
-
-# =============================================================================
-# RISK SCORING ENGINE
-# =============================================================================
-
-def compute_risk_scores(sector: str, funding_stage: str, team_size: int,
-                        operations: str, data_sensitivity: str) -> dict:
-    """Rule-based risk engine. Returns dict of five risk category scores (0-100)."""
-
-    base = SECTOR_PROFILES[sector]
-
-    stage_multiplier = {
-        "Pre-seed": 0.7,
-        "Seed":     0.9,
-        "Series A": 1.1,
-        "Series B+": 1.3,
-    }[funding_stage]
-
-    if team_size <= 5:    team_mult = 0.8
-    elif team_size <= 20: team_mult = 1.0
-    elif team_size <= 50: team_mult = 1.15
-    elif team_size <= 150: team_mult = 1.3
-    else:                 team_mult = 1.5
-
-    ops_mult = {
-        "Digital-only": {"property": 0.4, "liability": 0.8, "cyber": 1.2},
-        "Physical-only": {"property": 1.4, "liability": 1.2, "cyber": 0.7},
-        "Hybrid": {"property": 1.0, "liability": 1.0, "cyber": 1.0},
-    }[operations]
-
-    data_mult = {
-        "Low":    {"cyber": 0.6, "compliance": 0.8},
-        "Medium": {"cyber": 1.0, "compliance": 1.0},
-        "High":   {"cyber": 1.4, "compliance": 1.3},
-    }[data_sensitivity]
-
-    cyber = base["cyber"] * stage_multiplier * ops_mult.get("cyber", 1.0) \
-            * data_mult["cyber"]
-    liability = base["liability"] * stage_multiplier * ops_mult.get("liability", 1.0) \
-                * (0.85 + 0.05 * min(team_size / 20, 3))
-    key_person = base["key_person"] * (1.4 if team_size <= 10 else 1.0) \
-                 * stage_multiplier
-    property_risk = base["property"] * ops_mult.get("property", 1.0) * team_mult
-    compliance = base["compliance"] * stage_multiplier * data_mult["compliance"]
-
-    def to_100(x): return max(0, min(100, round(x * 7.5, 1)))
-
-    return {
-        "Cyber Risk":        to_100(cyber),
-        "Liability Risk":    to_100(liability),
-        "Key Person Risk":   to_100(key_person),
-        "Property Risk":     to_100(property_risk),
-        "Compliance Risk":   to_100(compliance),
-    }
-
-
-def priority_label(score: float) -> str:
-    if score >= 70: return "Critical"
-    if score >= 40: return "Recommended"
-    return "Optional"
-
-
 def priority_css(label: str) -> str:
     return {
         "Critical":    "priority-critical",
         "Recommended": "priority-recommended",
         "Optional":    "priority-optional",
-    }[label]
-
-
-# =============================================================================
-# PRODUCT RECOMMENDER
-# =============================================================================
-
-PRODUCT_RISK_MAP = {
-    "cyber_liability":        {"Cyber Risk": 1.0, "Compliance Risk": 0.3},
-    "dno_liability":          {"Liability Risk": 0.7, "Compliance Risk": 0.5},
-    "professional_indemnity": {"Liability Risk": 1.0, "Cyber Risk": 0.2},
-    "employee_health":        {"Key Person Risk": 0.5, "Liability Risk": 0.2},
-    "group_pa":               {"Key Person Risk": 0.6, "Liability Risk": 0.2},
-    "employees_comp":         {"Liability Risk": 0.6, "Compliance Risk": 0.6,
-                               "Property Risk": 0.2},
-    "property_fire":          {"Property Risk": 1.0},
-    "business_edge":          {"Property Risk": 0.7, "Liability Risk": 0.4},
-    "public_liability":       {"Liability Risk": 0.8, "Property Risk": 0.3},
-    "product_liability":      {"Liability Risk": 0.9, "Compliance Risk": 0.3},
-    "marine_transit":         {"Property Risk": 0.8},
-    "key_person":             {"Key Person Risk": 1.0},
-    "employment_practices":   {"Liability Risk": 0.6, "Compliance Risk": 0.6},
-    "crime_fidelity":         {"Cyber Risk": 0.3, "Liability Risk": 0.4,
-                               "Compliance Risk": 0.3},
-    "gadget_equipment":       {"Property Risk": 0.5},
-    "clinical_trials":        {"Compliance Risk": 0.8, "Liability Risk": 0.6},
-}
-
-SECTOR_OVERRIDES = {
-    "Healthtech": ["clinical_trials"],
-    "Logistics / Mobility": ["marine_transit", "public_liability"],
-    "D2C / Consumer Brands": ["product_liability", "marine_transit"],
-    "Foodtech / Cloud Kitchen": ["product_liability", "public_liability"],
-    "Fintech": ["crime_fidelity", "dno_liability"],
-    "Cleantech / Climatetech": ["property_fire", "public_liability"],
-    "Agritech": ["marine_transit"],
-}
-
-SECTOR_EXCLUSIONS = {
-    "SaaS / Enterprise Software":   ["clinical_trials", "product_liability", "marine_transit"],
-    "Fintech":                      ["clinical_trials", "product_liability", "marine_transit"],
-    "Edtech":                       ["clinical_trials", "product_liability", "marine_transit"],
-    "HRtech":                       ["clinical_trials", "product_liability", "marine_transit"],
-    "Legaltech":                    ["clinical_trials", "product_liability", "marine_transit"],
-    "Gaming / Media / Content":     ["clinical_trials", "marine_transit"],
-    "D2C / Consumer Brands":        ["clinical_trials"],
-    "Healthtech":                   [],
-    "Deeptech / AI / Robotics":     ["clinical_trials"],
-    "Agritech":                     ["clinical_trials"],
-    "Cleantech / Climatetech":      ["clinical_trials"],
-    "Logistics / Mobility":         ["clinical_trials", "product_liability"],
-    "Foodtech / Cloud Kitchen":     ["clinical_trials"],
-}
-
-
-def recommend_products(risk_scores: dict, sector: str, team_size: int,
-                       funding_stage: str) -> list:
-    scored = []
-    excluded = set(SECTOR_EXCLUSIONS.get(sector, []))
-    for key, weights in PRODUCT_RISK_MAP.items():
-        if key in excluded:
-            continue
-        score = sum(risk_scores[cat] * w for cat, w in weights.items())
-        score = score / sum(weights.values())
-        scored.append((key, score))
-
-    for key in SECTOR_OVERRIDES.get(sector, []):
-        scored = [(k, s + 25 if k == key else s) for k, s in scored]
-
-    # D&O boost raised to +30 so it survives multiple property overrides in
-    # physical sectors (D2C, Agritech, Logistics) where +15 was insufficient.
-    if funding_stage in ("Series A", "Series B+"):
-        scored = [(k, s + 30 if k == "dno_liability" else s) for k, s in scored]
-
-    if team_size >= 10:
-        scored = [(k, s + 10 if k == "employee_health" else s) for k, s in scored]
-    if team_size >= 25:
-        scored = [(k, s + 8 if k == "employment_practices" else s) for k, s in scored]
-
-    scored = [(k, min(100, s)) for k, s in scored]
-    scored.sort(key=lambda x: x[1], reverse=True)
-
-    top = scored[:5]
-    results = []
-    for key, score in top:
-        product = PRODUCT_CATALOG[key].copy()
-        product["score"] = round(score, 1)
-        product["priority"] = priority_label(product["score"])  # label from rounded score
-        results.append(product)
-    return results
+    }.get(label, "priority-optional")
 
 
 # =============================================================================
 # VISUALIZATION
 # =============================================================================
-
 def render_risk_radar(scores: dict):
     categories = list(scores.keys()) + [list(scores.keys())[0]]
     values = list(scores.values()) + [list(scores.values())[0]]
@@ -1002,31 +552,133 @@ def render_risk_radar(scores: dict):
 
 
 def render_risk_bars(scores: dict):
-    df = pd.DataFrame({"Category": list(scores.keys()),
-                       "Score": list(scores.values())})
-    df = df.sort_values("Score", ascending=True)
+    """Horizontal bar chart with color-band backgrounds and threshold reference lines."""
+    df = pd.DataFrame({
+        "Category": list(scores.keys()),
+        "Score": list(scores.values()),
+    }).sort_values("Score", ascending=True)
 
     def band_color(s):
         if s >= 70: return "#AD1E23"
         if s >= 40: return "#F59E0B"
         return "#10B981"
 
-    fig = go.Figure(go.Bar(
-        x=df["Score"], y=df["Category"], orientation='h',
-        marker=dict(color=[band_color(s) for s in df["Score"]],
-                    line=dict(width=0)),
-        text=[f"{s:.0f}" for s in df["Score"]], textposition='outside',
-        textfont=dict(size=12, color='#0F172A'),
+    fig = go.Figure()
+
+    # Faint background bands for each priority zone
+    fig.add_shape(type="rect", x0=0,  x1=40,  y0=-0.5, y1=len(df) - 0.5,
+                  fillcolor="rgba(16,185,129,0.04)", line_width=0, layer="below")
+    fig.add_shape(type="rect", x0=40, x1=70,  y0=-0.5, y1=len(df) - 0.5,
+                  fillcolor="rgba(245,158,11,0.05)", line_width=0, layer="below")
+    fig.add_shape(type="rect", x0=70, x1=100, y0=-0.5, y1=len(df) - 0.5,
+                  fillcolor="rgba(173,30,35,0.05)", line_width=0, layer="below")
+
+    # Threshold lines with labels
+    for x_val, label, color in [(40, "Recommended", "#F59E0B"), (70, "Critical", "#AD1E23")]:
+        fig.add_vline(x=x_val, line_dash="dot", line_color=color,
+                      line_width=1.2, opacity=0.6)
+        fig.add_annotation(x=x_val, y=len(df) - 0.1, text=label,
+                           showarrow=False,
+                           font=dict(size=9, color=color),
+                           xanchor="center", yanchor="bottom")
+
+    # Bars
+    fig.add_trace(go.Bar(
+        x=df["Score"],
+        y=df["Category"],
+        orientation="h",
+        marker=dict(color=[band_color(s) for s in df["Score"]], line=dict(width=0)),
+        text=[f"<b>{s:.0f}</b>" for s in df["Score"]],
+        textposition="outside",
+        textfont=dict(size=12, color="#0F172A"),
+        hovertemplate="%{y}: %{x:.1f}/100<extra></extra>",
     ))
+
     fig.update_layout(
-        xaxis=dict(range=[0, 115], title="Risk Score (0–100)",
-                   tickfont=dict(color='#94A3B8'), gridcolor='#F4F4F0'),
-        yaxis=dict(title="", tickfont=dict(size=12, color='#0F172A')),
-        height=320, margin=dict(l=20, r=50, t=15, b=40),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(range=[0, 115], showgrid=False, zeroline=False,
+                   tickfont=dict(color="#94A3B8", size=10),
+                   title=dict(text="Risk Score (0–100)",
+                              font=dict(size=10, color="#94A3B8"))),
+        yaxis=dict(title="", tickfont=dict(size=12, color="#0F172A")),
+        height=320,
+        margin=dict(l=20, r=60, t=30, b=30),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        bargap=0.35,
     )
     return fig
+
+
+def render_risk_scorecards(scores: dict) -> str:
+    """Returns HTML for 5 mini scorecard tiles — one per risk dimension."""
+
+    def band(s):
+        if s >= 70: return "#AD1E23", "#FEF2F2", "Critical"
+        if s >= 40: return "#D97706", "#FFFBEB", "Watch"
+        return "#059669", "#ECFDF5", "Low"
+
+    # Inline SVG icon paths (viewBox 0 0 24 24, stroke-based)
+    icons = {
+        "Cyber Risk": (
+            '<path d="M12 2L4 6v5c0 5.25 3.4 10.15 8 11.35C16.6 21.15 20 16.25 '
+            '20 11V6L12 2z" stroke="currentColor" stroke-width="1.5" fill="none"/>'
+        ),
+        "Liability Risk": (
+            '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" '
+            'stroke="currentColor" stroke-width="1.5" fill="none"/>'
+            '<path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.5" '
+            'stroke-linecap="round" fill="none"/>'
+        ),
+        "Key Person Risk": (
+            '<circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5" fill="none"/>'
+            '<path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" '
+            'stroke-width="1.5" stroke-linecap="round" fill="none"/>'
+        ),
+        "Property Risk": (
+            '<path d="M3 12l9-9 9 9M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9" '
+            'stroke="currentColor" stroke-width="1.5" stroke-linecap="round" '
+            'stroke-linejoin="round" fill="none"/>'
+        ),
+        "Compliance Risk": (
+            '<path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.5" '
+            'stroke-linecap="round" fill="none"/>'
+            '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5" fill="none"/>'
+        ),
+    }
+
+    cards_html = '<div style="display:flex;flex-direction:column;gap:10px;">'
+    for dim, score in scores.items():
+        color, bg, label = band(score)
+        icon_path = icons.get(dim, "")
+        bar_pct = int(min(score, 100))
+        cards_html += f"""
+        <div style="background:{bg};border:1px solid {color}22;border-radius:10px;
+                    padding:10px 14px;display:flex;align-items:center;gap:12px;">
+          <div style="flex-shrink:0;width:32px;height:32px;border-radius:8px;
+                      background:{color}15;display:flex;align-items:center;
+                      justify-content:center;color:{color};">
+            <svg width="16" height="16" viewBox="0 0 24 24">{icon_path}</svg>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.7rem;font-weight:600;color:#475569;
+                        letter-spacing:0.03em;margin-bottom:4px;white-space:nowrap;
+                        overflow:hidden;text-overflow:ellipsis;">{dim}</div>
+            <div style="background:#E5E5E0;border-radius:4px;height:5px;width:100%;">
+              <div style="background:{color};height:5px;border-radius:4px;
+                          width:{bar_pct}%;"></div>
+            </div>
+          </div>
+          <div style="flex-shrink:0;text-align:right;min-width:42px;">
+            <div style="font-size:1.1rem;font-weight:800;color:{color};
+                        line-height:1;">{score:.0f}</div>
+            <div style="font-size:0.6rem;font-weight:600;color:{color};
+                        opacity:0.75;letter-spacing:0.05em;
+                        text-transform:uppercase;">{label}</div>
+          </div>
+        </div>
+        """
+    cards_html += "</div>"
+    return cards_html
 
 
 # =============================================================================
@@ -1245,11 +897,13 @@ st.markdown(
     '<div class="section-sub">Five-dimension exposure profile based on your inputs.</div>',
     unsafe_allow_html=True,
 )
-dash_col1, dash_col2 = st.columns([1, 1.2])
+dash_col1, dash_col2, dash_col3 = st.columns([1.1, 1.2, 0.9])
 with dash_col1:
     st.plotly_chart(render_risk_radar(scores), use_container_width=True)
 with dash_col2:
     st.plotly_chart(render_risk_bars(scores), use_container_width=True)
+with dash_col3:
+    st.markdown(render_risk_scorecards(scores), unsafe_allow_html=True)
 
 # Verdict
 overall = sum(scores.values()) / len(scores)
@@ -1276,19 +930,27 @@ st.markdown("---")
 # Product recommendations
 st.markdown(
     '<div class="section-heading">Recommended ICICI Lombard Products</div>'
-    '<div class="section-sub">Ranked by how closely they match your risk profile.</div>',
+    '<div class="section-sub">Top recommendations ranked by fit score. Group Health Insurance is always included as a baseline.</div>',
     unsafe_allow_html=True,
 )
 
 for rec in recommendations:
-    priority  = rec["priority"]
-    css_class = priority_css(priority)
+    priority     = rec["priority"]
+    css_class    = priority_css(priority)
+    is_mandatory = rec.get("mandatory", False)
+
+    mandatory_badge = (
+        '<span style="background:#DCFCE7;color:#166534;font-size:0.65rem;'
+        'font-weight:700;padding:2px 9px;border-radius:20px;letter-spacing:0.05em;'
+        'text-transform:uppercase;margin-left:8px;">Baseline</span>'
+    ) if is_mandatory else ""
 
     st.markdown(
         f"""
         <div class="product-card">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
-            <h4>{rec['name']}</h4>
+          <div style="display:flex;justify-content:space-between;align-items:center;
+                      margin-bottom:0.4rem;">
+            <h4>{rec['name']}{mandatory_badge}</h4>
             <span class="{css_class}">{priority}</span>
           </div>
           <div style="color:#94A3B8;font-size:0.8rem;margin-bottom:0.5rem;">
@@ -1301,7 +963,8 @@ for rec in recommendations:
             <strong>Why you need this:</strong> {rec['nudge']}
           </div>
           <div style="margin-top:0.6rem;font-size:0.78rem;color:#94A3B8;">
-            Best for: {rec['best_for']} &nbsp;·&nbsp; Fit score: <strong style="color:#475569;">{rec['score']:.0f}/100</strong>
+            Best for: {rec['best_for']} &nbsp;&middot;&nbsp;
+            Fit score: <strong style="color:#475569;">{rec['score']:.0f}/100</strong>
           </div>
         </div>
         """,
@@ -1351,7 +1014,7 @@ with st.expander("How we scored you — the logic behind the numbers"):
         5. **Data sensitivity** — handling PII, health, or financial data pushes
            cyber and compliance scores up sharply under DPDP Act 2023.
 
-        Scores are normalised to 0–100. Products are matched using a
+        Scores are normalised to 0–100. Products are matched from a pool of 28 insurance types using a
         weighted-risk mapping, plus sector-specific legal requirements (e.g.
         clinical trials liability is near-mandatory for healthtech running
         human studies).
