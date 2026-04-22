@@ -13,6 +13,7 @@ Author: ICICI Lombard Intern Project (Proof of Concept)
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.graph_objects as go
 import pandas as pd
 from risk_engine import (
@@ -646,37 +647,41 @@ def render_risk_scorecards(scores: dict) -> str:
         ),
     }
 
-    cards_html = '<div style="display:flex;flex-direction:column;gap:10px;">'
+    cards_html = (
+        '<style>body{margin:0;background:transparent;'
+        "font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;}</style>"
+        '<div style="display:flex;flex-direction:column;gap:10px;">'
+    )
     for dim, score in scores.items():
         color, bg, label = band(score)
         icon_path = icons.get(dim, "")
         bar_pct = int(min(score, 100))
-        cards_html += f"""
-        <div style="background:{bg};border:1px solid {color}22;border-radius:10px;
-                    padding:10px 14px;display:flex;align-items:center;gap:12px;">
-          <div style="flex-shrink:0;width:32px;height:32px;border-radius:8px;
-                      background:{color}15;display:flex;align-items:center;
-                      justify-content:center;color:{color};">
-            <svg width="16" height="16" viewBox="0 0 24 24">{icon_path}</svg>
-          </div>
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:0.7rem;font-weight:600;color:#475569;
-                        letter-spacing:0.03em;margin-bottom:4px;white-space:nowrap;
-                        overflow:hidden;text-overflow:ellipsis;">{dim}</div>
-            <div style="background:#E5E5E0;border-radius:4px;height:5px;width:100%;">
-              <div style="background:{color};height:5px;border-radius:4px;
-                          width:{bar_pct}%;"></div>
-            </div>
-          </div>
-          <div style="flex-shrink:0;text-align:right;min-width:42px;">
-            <div style="font-size:1.1rem;font-weight:800;color:{color};
-                        line-height:1;">{score:.0f}</div>
-            <div style="font-size:0.6rem;font-weight:600;color:{color};
-                        opacity:0.75;letter-spacing:0.05em;
-                        text-transform:uppercase;">{label}</div>
-          </div>
-        </div>
-        """
+        cards_html += (
+            f'<div style="background:{bg};border:1px solid {color}22;border-radius:10px;'
+            f'padding:10px 14px;display:flex;align-items:center;gap:12px;">'
+            f'<div style="flex-shrink:0;width:32px;height:32px;border-radius:8px;'
+            f'background:{color}15;display:flex;align-items:center;'
+            f'justify-content:center;color:{color};">'
+            f'<svg width="16" height="16" viewBox="0 0 24 24">{icon_path}</svg>'
+            f'</div>'
+            f'<div style="flex:1;min-width:0;">'
+            f'<div style="font-size:0.7rem;font-weight:600;color:#475569;'
+            f'letter-spacing:0.03em;margin-bottom:4px;white-space:nowrap;'
+            f'overflow:hidden;text-overflow:ellipsis;">{dim}</div>'
+            f'<div style="background:#E5E5E0;border-radius:4px;height:5px;width:100%;">'
+            f'<div style="background:{color};height:5px;border-radius:4px;'
+            f'width:{bar_pct}%;"></div>'
+            f'</div>'
+            f'</div>'
+            f'<div style="flex-shrink:0;text-align:right;min-width:42px;">'
+            f'<div style="font-size:1.1rem;font-weight:800;color:{color};'
+            f'line-height:1;">{score:.0f}</div>'
+            f'<div style="font-size:0.6rem;font-weight:600;color:{color};'
+            f'opacity:0.75;letter-spacing:0.05em;'
+            f'text-transform:uppercase;">{label}</div>'
+            f'</div>'
+            f'</div>'
+        )
     cards_html += "</div>"
     return cards_html
 
@@ -903,7 +908,7 @@ with dash_col1:
 with dash_col2:
     st.plotly_chart(render_risk_bars(scores), use_container_width=True)
 with dash_col3:
-    st.markdown(render_risk_scorecards(scores), unsafe_allow_html=True)
+    components.html(render_risk_scorecards(scores), height=340, scrolling=False)
 
 # Verdict
 overall = sum(scores.values()) / len(scores)
