@@ -12,12 +12,14 @@ No API keys required. All logic is rule-based and runs fully offline.
 Author: ICICI Lombard Intern Project (Proof of Concept)
 """
 
+import json
 import streamlit as st
 import streamlit.components.v1 as components
 import plotly.graph_objects as go
 import pandas as pd
 from risk_engine import (
     SECTOR_PROFILES,
+    PRODUCT_CATALOG,
     compute_risk_scores,
     recommend_products,
 )
@@ -29,7 +31,7 @@ st.set_page_config(
     page_title="Startup Shield · ICICI Lombard",
     page_icon="🛡️",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # =============================================================================
@@ -517,6 +519,28 @@ st.markdown(
 
 
 # =============================================================================
+# GENAI — Gemini 1.5 Flash (optional; graceful fallback if key absent)
+# =============================================================================
+_GENAI_AVAILABLE = False
+_GEMINI_CLIENT = None
+
+try:
+    from google import genai as _genai  # type: ignore[import]
+    from google.genai import types as _genai_types  # type: ignore[import]
+
+    try:
+        _GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
+    except Exception:
+        _GEMINI_KEY = ""
+
+    if _GEMINI_KEY:
+        _GEMINI_CLIENT = _genai.Client(api_key=_GEMINI_KEY)
+        _GENAI_AVAILABLE = True
+except ImportError:
+    pass
+
+
+# =============================================================================
 # UI HELPERS
 # =============================================================================
 def priority_css(label: str) -> str:
@@ -687,6 +711,189 @@ def render_risk_scorecards(scores: dict) -> str:
 
 
 # =============================================================================
+# GENAI HELPERS
+# =============================================================================
+def _catalog_for_prompt() -> str:
+    lines = []
+    for key, p in PRODUCT_CATALOG.items():
+        snippet = p["what_it_covers"][:110].replace("\n", " ")
+        lines.append(f"  {key}: {p['name']} — {snippet}...")
+    return "\n".join(lines)
+
+
+def generate_bundles(
+    startup_name: str,
+    sector: str,
+    stage: str,
+    team_size: int,
+    operations: str,
+    data_sensitivity: str,
+    scores: dict,
+    product_description: str = "",
+    customer_type=None,
+    data_handled=None,
+    regulatory=None,
+    physical_assets=None,
+    has_investors: str = "No",
+    biggest_fear: str = "",
+) -> dict:
+    """Calls Gemini 1.5 Flash to produce 1–2 insurance bundles. Returns parsed JSON or None."""
+    if not _GENAI_AVAILABLE:
+        return None
+
+    profile_parts = [
+        f"Startup name: {startup_name}",
+        f"Sector: {sector}",
+        f"Funding stage: {stage}",
+        f"Team size: {team_size} people",
+        f"Primary operations: {operations}",
+        f"Customer data sensitivity: {data_sensitivity}",
+        f"Institutional investors: {has_investors}",
+    ]
+    if product_description.strip():
+        profile_parts.append(f"What they build/do: {product_description.strip()}")
+    if customer_type:
+        profile_parts.append(f"Customer types: {', '.join(customer_type)}")
+    if data_handled:
+        profile_parts.append(f"Data / assets handled: {', '.join(data_handled)}")
+    if regulatory:
+        profile_parts.append(f"Regulatory exposure: {', '.join(regulatory)}")
+    if physical_assets:
+        profile_parts.append(f"Physical assets owned: {', '.join(physical_assets)}")
+    if biggest_fear.strip():
+        profile_parts.append(f"Founder's biggest fear: {biggest_fear.strip()}")
+
+    score_lines = [f"  {k}: {v}/100" for k, v in scores.items()]
+
+    prompt = (
+        "You are an expert insurance advisor specialising in Indian startups "
+        "and ICICI Lombard products. Analyse the startup profile and risk scores "
+        "below, then recommend 1–2 coherent insurance bundles.\n\n"
+        "Each bundle groups products that address a shared risk theme "
+        "(e.g. 'Digital Risk Bundle', 'Physical Ops Bundle').\n"
+        "For every product inside a bundle, write a 'why_for_you' field "
+        "that is SPECIFIC to this startup — mention their sector, data type, "
+        "team size, regulatory exposure, or stated fear. Do NOT write generic text.\n\n"
+        "Return ONLY valid JSON — no markdown fences, no explanation:\n"
+        "{\n"
+        '  "bundles": [\n'
+        "    {\n"
+        '      "name": "bundle name",\n'
+        '      "tagline": "one-line description of what this bundle protects",\n'
+        '      "priority": "Critical or Recommended",\n'
+        '      "buy_timeline": "e.g. Before your next funding round",\n'
+        '      "bundle_summary": "2-3 sentence justification specific to this startup",\n'
+        '      "products": [\n'
+        "        {\n"
+        '          "key": "exact product key from catalog",\n'
+        '          "name": "product name",\n'
+        '          "why_for_you": "2-3 startup-specific sentences"\n'
+        "        }\n"
+        "      ]\n"
+        "    }\n"
+        "  ],\n"
+        '  "bottom_line": "one sentence of overall advice for this founder"\n'
+        "}\n\n"
+        "STARTUP PROFILE:\n"
+        + "\n".join(profile_parts)
+        + "\n\nRISK SCORES (70+ = Critical, 40–69 = Recommended, <40 = Optional):\n"
+        + "\n".join(score_lines)
+        + "\n\nPRODUCT CATALOG (use ONLY these exact keys):\n"
+        + _catalog_for_prompt()
+        + "\n\nRules:\n"
+        "- Each bundle must contain 3–5 products\n"
+        "- Use only product keys listed in the catalog above\n"
+        "- why_for_you must reference specific details from this startup's profile\n"
+        "- Do not include clinical_trials unless regulatory exposure mentions CDSCO\n"
+        "- employee_health must be included in at least one bundle\n"
+        "- Assign priority 'Critical' if any risk score is 70 or above\n"
+    )
+
+    try:
+        response = _GEMINI_CLIENT.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=prompt,
+            config=_genai_types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.4,
+            ),
+        )
+        result = json.loads(response.text)
+        # Sanitize: remove any product keys Gemini hallucinated (not in catalog)
+        valid_keys = set(PRODUCT_CATALOG.keys())
+        for bundle in result.get("bundles", []):
+            bundle["products"] = [
+                p for p in bundle.get("products", [])
+                if p.get("key") in valid_keys
+            ]
+            # Normalise priority to Critical / Recommended only
+            if bundle.get("priority") not in ("Critical", "Recommended"):
+                bundle["priority"] = "Recommended"
+        return result
+    except Exception as exc:
+        st.warning(
+            f"⚠️ AI bundle generation hit an issue ({exc}). "
+            "Showing rule-based recommendations instead."
+        )
+        return None
+
+
+def render_bundle_card(bundle: dict) -> str:
+    """Returns the HTML string for one insurance bundle card."""
+    priority = bundle.get("priority", "Recommended")
+    border_color = "#AD1E23" if priority == "Critical" else "#F59E0B"
+    priority_class = "priority-critical" if priority == "Critical" else "priority-recommended"
+
+    products_html = ""
+    for p in bundle.get("products", []):
+        products_html += (
+            '<div style="background:#FAFAF7;border:1px solid #E5E5E0;border-radius:8px;'
+            "padding:0.9rem 1.1rem;margin-bottom:0.55rem;\">"
+            f'<div style="font-size:0.9rem;font-weight:600;color:#0F172A;'
+            f'margin-bottom:0.35rem;">{p.get("name", "")}</div>'
+            f'<div style="font-size:0.83rem;color:#475569;line-height:1.65;">'
+            f'<strong style="color:#AD1E23;">Why for you:</strong> '
+            f'{p.get("why_for_you", "")}</div>'
+            "</div>"
+        )
+
+    timeline = bundle.get("buy_timeline", "")
+    timeline_html = (
+        f'<div style="margin-top:0.85rem;font-size:0.78rem;color:#64748B;'
+        f'display:flex;align-items:center;gap:0.4rem;">'
+        f'<svg width="13" height="13" viewBox="0 0 24 24" fill="none">'
+        f'<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>'
+        f'<path d="M12 7v5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
+        f"</svg><span>{timeline}</span></div>"
+    ) if timeline else ""
+
+    return (
+        f'<div style="background:#FFFFFF;border:1px solid {border_color}33;'
+        f"border-left:4px solid {border_color};border-radius:12px;"
+        f"padding:1.4rem 1.6rem;margin:0.75rem 0;"
+        f'box-shadow:0 2px 8px rgba(15,23,42,0.06);">'
+        f'<div style="display:flex;justify-content:space-between;'
+        f'align-items:flex-start;margin-bottom:0.75rem;">'
+        f'<div style="flex:1;min-width:0;padding-right:1rem;">'
+        f'<div style="font-size:1.1rem;font-weight:700;color:#0F172A;'
+        f'letter-spacing:-0.02em;margin-bottom:0.2rem;">'
+        f'{bundle.get("name", "Insurance Bundle")}</div>'
+        f'<div style="font-size:0.82rem;color:#475569;">'
+        f'{bundle.get("tagline", "")}</div></div>'
+        f'<span class="{priority_class}">{priority}</span></div>'
+        f'<div style="background:#F4F4F0;border-radius:8px;padding:0.75rem 1rem;'
+        f'margin-bottom:0.9rem;font-size:0.86rem;color:#0F172A;line-height:1.65;">'
+        f'{bundle.get("bundle_summary", "")}</div>'
+        f'<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;'
+        f'text-transform:uppercase;color:#94A3B8;margin-bottom:0.55rem;">'
+        "Products in this bundle</div>"
+        f"{products_html}"
+        f"{timeline_html}"
+        "</div>"
+    )
+
+
+# =============================================================================
 # UI — Hero
 # =============================================================================
 st.markdown(
@@ -709,185 +916,237 @@ st.markdown(
       <p class="hero-tagline">Tailored insurance recommendations for Indian startups —
         powered by sector-aware GenAI risk logic.</p>
       <hr class="hero-rule"/>
-      <p class="hero-micro">Powered by GenAI &nbsp;·&nbsp; Built for Indian startups &nbsp;·&nbsp; No data leaves your browser</p>
+      <p class="hero-micro">Powered by Google Gemini &nbsp;·&nbsp; Built for Indian startups &nbsp;·&nbsp; ICICI Lombard</p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 # =============================================================================
-# UI — Sidebar
+# UI — Sidebar (minimal — all inputs live in the main panel)
 # =============================================================================
 with st.sidebar:
     st.markdown(
         """
-        <div style="display:flex;align-items:center;gap:0.55rem;margin-bottom:1rem;">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <rect x="3" y="2" width="12" height="14" rx="2" stroke="#AD1E23" stroke-width="1.5" fill="none"/>
-            <path d="M6 6h6M6 9h6M6 12h4" stroke="#AD1E23" stroke-width="1.5" stroke-linecap="round"/>
+        <div style="text-align:center;padding:1.25rem 0 1.75rem;">
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L4 5.5v5.25C4 15.36 7.53 19.9 12 21.25 16.47 19.9 20 15.36 20 10.75V5.5L12 2z" fill="#AD1E23"/>
+            <path d="M9 12l2 2 4-4" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          <span style="font-size:0.95rem;font-weight:700;color:#0F172A;letter-spacing:-0.01em;">
-            Your startup profile
-          </span>
+          <div style="font-size:0.95rem;font-weight:700;color:#0F172A;margin-top:0.65rem;letter-spacing:-0.01em;">
+            Startup Shield
+          </div>
+          <div style="font-size:0.72rem;color:#94A3B8;margin-top:0.15rem;">ICICI Lombard</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # ── Company ──────────────────────────────────────────────────────────────
-    st.markdown('<div class="sidebar-section first">Company</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section first">How it works</div>', unsafe_allow_html=True)
+    st.markdown("""
+1. **Fill the form** with your startup details
+2. **Click Analyse** to compute your 5-dimension risk scores
+3. **Gemini AI** groups your coverage needs into named bundles with startup-specific reasoning
+4. **Review & act** — speak to an ICICI Lombard RM to bind cover
+    """)
 
-    startup_name = st.text_input("Startup name", value="Acme Labs",
-                                 help="Just a label, used in the report.")
+    if _GENAI_AVAILABLE:
+        st.markdown(
+            '<div class="privacy-badge" style="margin-top:1.5rem;">'
+            '<svg width="13" height="13" viewBox="0 0 13 13" fill="none">'
+            '<path d="M6.5 1.5L2 3.8v3.2c0 2.8 1.9 5.4 4.5 6.1 2.6-.7 4.5-3.3 4.5-6.1V3.8L6.5 1.5z"'
+            ' fill="#AD1E23" opacity="0.8"/></svg>'
+            " AI bundles powered by Google Gemini 2.5. Inputs are sent to Google's API."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="privacy-badge" style="margin-top:1.5rem;">'
+            '<svg width="13" height="13" viewBox="0 0 13 13" fill="none">'
+            '<rect x="2" y="5.5" width="9" height="6" rx="1.5" stroke="#94A3B8" stroke-width="1.2" fill="none"/>'
+            '<path d="M4.5 5.5V4a2 2 0 014 0v1.5" stroke="#94A3B8" stroke-width="1.2" stroke-linecap="round" fill="none"/>'
+            "</svg>"
+            " No GEMINI_API_KEY — rule-based recommendations. All inputs stay local."
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
-    sector = st.selectbox(
-        "Sector",
-        list(SECTOR_PROFILES.keys()),
-        help="Pick the sector that describes most of your revenue.",
+
+# =============================================================================
+# UI — Form (landing) or Results, driven by session_state
+# =============================================================================
+
+if not st.session_state.get("show_results"):
+
+    # ── FORM ─────────────────────────────────────────────────────────────────
+    st.markdown(
+        '<div class="section-heading">Startup Profile</div>'
+        '<div class="section-sub">Tell us about your company — takes about 60 seconds.</div>',
+        unsafe_allow_html=True,
     )
+
+    fc1, fc2, fc3 = st.columns(3)
+    with fc1:
+        startup_name = st.text_input("Startup name", value="Acme Labs",
+                                     help="Used as a label in your report.")
+    with fc2:
+        sector = st.selectbox("Sector", list(SECTOR_PROFILES.keys()),
+                              help="Pick the sector that describes most of your revenue.")
+    with fc3:
+        funding_stage = st.selectbox("Funding stage",
+                                     ["Pre-seed", "Seed", "Series A", "Series B+"])
+
     st.caption(f"{SECTOR_PROFILES[sector]['emoji']}  {SECTOR_PROFILES[sector]['description']}")
 
-    # ── Team & Stage ─────────────────────────────────────────────────────────
-    st.markdown('<div class="sidebar-section">Team &amp; Stage</div>', unsafe_allow_html=True)
-
-    funding_stage = st.selectbox(
-        "Funding stage",
-        ["Pre-seed", "Seed", "Series A", "Series B+"],
-    )
-
-    _team_val = st.session_state.get("team_size_slider", 15)
-    st.markdown(
-        f'<div class="slider-label-row">'
-        f'<span>Team size (FTEs)</span>'
-        f'<span class="value-pill">{_team_val}</span>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-    team_size = st.slider(
-        "", min_value=1, max_value=500, value=15, step=1,
-        key="team_size_slider", label_visibility="collapsed",
-    )
-
-    # ── Risk Profile ─────────────────────────────────────────────────────────
-    st.markdown('<div class="sidebar-section">Risk Profile</div>', unsafe_allow_html=True)
-
-    operations = st.radio(
-        "Primary operations",
-        ["Digital-only", "Physical-only", "Hybrid"],
-        horizontal=True,
-        help="Digital-only = cloud/SaaS. Physical-only = warehouse/factory. Hybrid = both.",
-    )
-
-    data_sensitivity = st.select_slider(
-        "Customer data sensitivity",
-        options=["Low", "Medium", "High"],
-        value="Medium",
-        help="High = financial, health, or identity data. Low = basic user accounts only.",
-    )
+    fr1, fr2, fr3 = st.columns([1.2, 1, 1])
+    with fr1:
+        team_size = st.slider("Team size (FTEs)", 1, 500, 15)
+    with fr2:
+        operations = st.radio(
+            "Primary operations",
+            ["Digital-only", "Physical-only", "Hybrid"],
+            horizontal=True,
+            help="Digital-only = cloud/SaaS · Physical = warehouse/factory · Hybrid = both.",
+        )
+    with fr3:
+        data_sensitivity = st.select_slider(
+            "Customer data sensitivity",
+            options=["Low", "Medium", "High"],
+            value="Medium",
+            help="High = financial, health, or identity data.",
+        )
 
     st.markdown("---")
-    analyse = st.button("Analyse my startup", type="primary", use_container_width=True)
-
     st.markdown(
-        """
-        <div class="privacy-badge">
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-            <rect x="2" y="5.5" width="9" height="6" rx="1.5" stroke="#94A3B8" stroke-width="1.2" fill="none"/>
-            <path d="M4.5 5.5V4a2 2 0 014 0v1.5" stroke="#94A3B8" stroke-width="1.2" stroke-linecap="round" fill="none"/>
-          </svg>
-          All inputs stay on your machine. No data is sent anywhere.
-        </div>
-        """,
+        '<div class="section-heading">Tell Us More '
+        '<span style="font-size:0.68rem;background:#EEF2FF;color:#3730A3;'
+        'padding:2px 8px;border-radius:10px;margin-left:6px;font-weight:600;">'
+        "Powers AI bundles</span></div>"
+        '<div class="section-sub">The more detail you give, the more specific Gemini\'s reasoning.</div>',
         unsafe_allow_html=True,
     )
 
+    fa, fb = st.columns([1.3, 1])
+    with fa:
+        product_description = st.text_area(
+            "What does your product / service do?",
+            placeholder="e.g. We build a UPI payment gateway for SMBs, processing 10k+ txns/day…",
+            height=110,
+            help="Be specific — what you build, who it's for, how it works.",
+        )
+    with fb:
+        customer_type = st.multiselect(
+            "Who are your customers?",
+            ["B2B Enterprise", "B2C Consumers", "Government / PSU",
+             "D2C / Marketplace", "SMB / MSME"],
+        )
+        has_investors = st.radio(
+            "Institutional investors on board?",
+            ["Yes", "No"],
+            index=1,
+            horizontal=True,
+            help="VCs / angels often require D&O and other policies.",
+        )
 
-# =============================================================================
-# UI — Main panel (empty state)
-# =============================================================================
-if not analyse:
-    st.markdown(
-        """
-        <div class="info-card">
-          <div class="info-card-icon">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M10 2C5.58 2 2 5.58 2 10s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm1 12H9v-2h2v2zm0-4H9V6h2v4z" fill="#AD1E23"/>
-            </svg>
-          </div>
-          <div class="info-card-body">
-            Fill in your startup details on the left and click
-            <strong>Analyse my startup</strong> to see your customised risk
-            profile and recommended ICICI Lombard policies.
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    fd, fe, ff = st.columns(3)
+    with fd:
+        data_handled = st.multiselect(
+            "Sensitive data / assets you handle",
+            [
+                "Payments / financial transactions",
+                "Health / medical records",
+                "Personal identity data (KYC / Aadhaar)",
+                "Physical inventory / goods",
+                "Sensitive personal data (DPDP Act)",
+                "None of the above",
+            ],
+        )
+    with fe:
+        regulatory = st.multiselect(
+            "Regulatory exposure",
+            [
+                "RBI / SEBI / IRDAI licensed",
+                "FSSAI / food safety",
+                "CDSCO / medical devices",
+                "DPDP Act obligations",
+                "DGCA / drone operations",
+                "None / minimal",
+            ],
+        )
+    with ff:
+        physical_assets = st.multiselect(
+            "Physical assets you own",
+            [
+                "Office / coworking space",
+                "Warehouse / fulfilment centre",
+                "Lab / R&D equipment",
+                "Vehicles / delivery fleet",
+                "Kitchen / food processing",
+                "None — fully cloud",
+            ],
+        )
+
+    biggest_fear = st.text_area(
+        "Biggest fear for your startup? (optional)",
+        placeholder="e.g. A data breach that kills customer trust, or a product recall that goes viral…",
+        height=80,
     )
 
-    st.markdown(
-        '<div class="section-heading">What this tool does</div>'
-        '<div class="section-sub">Three steps from profile to policy — all offline, no API keys.</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown("")
+    btn_col, _ = st.columns([1, 2])
+    with btn_col:
+        if st.button("Analyse my startup →", type="primary", use_container_width=True):
+            st.session_state["profile"] = {
+                "startup_name": startup_name,
+                "sector": sector,
+                "funding_stage": funding_stage,
+                "team_size": team_size,
+                "operations": operations,
+                "data_sensitivity": data_sensitivity,
+                "product_description": product_description,
+                "customer_type": customer_type,
+                "data_handled": data_handled,
+                "regulatory": regulatory,
+                "physical_assets": physical_assets,
+                "has_investors": has_investors,
+                "biggest_fear": biggest_fear,
+            }
+            st.session_state["show_results"] = True
+            st.session_state["_bundle_data"] = None
+            st.rerun()
 
-    st.markdown(
-        """
-        <div class="feature-grid">
-
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <circle cx="10" cy="10" r="7" stroke="#AD1E23" stroke-width="1.6" fill="none"/>
-                <circle cx="10" cy="10" r="3.5" stroke="#AD1E23" stroke-width="1.4" fill="none"/>
-                <circle cx="10" cy="10" r="1" fill="#AD1E23"/>
-              </svg>
-            </div>
-            <div class="feature-title">Sector-aware profiling</div>
-            <div class="feature-desc">We match your sector against known risk patterns from 13+ Indian startup categories — from fintech to agritech.</div>
-          </div>
-
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <rect x="3" y="11" width="3" height="6" rx="1" fill="#AD1E23"/>
-                <rect x="8.5" y="7" width="3" height="10" rx="1" fill="#AD1E23" opacity=".7"/>
-                <rect x="14" y="3" width="3" height="14" rx="1" fill="#AD1E23" opacity=".4"/>
-              </svg>
-            </div>
-            <div class="feature-title">5-dimension risk score</div>
-            <div class="feature-desc">Cyber, Liability, Key Person, Property, and Compliance — each scored 0–100 using a transparent rule engine.</div>
-          </div>
-
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path d="M10 2L3 5.5v4.75C3 14.1 6.07 17.8 10 19c3.93-1.2 7-4.9 7-8.75V5.5L10 2z"
-                      stroke="#AD1E23" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
-                <path d="M7 10l2 2 4-4" stroke="#AD1E23" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </div>
-            <div class="feature-title">Plain-language policy plan</div>
-            <div class="feature-desc">Top 5 ICICI Lombard policies explained as if talking to a first-time founder — no jargon, no upsell.</div>
-          </div>
-
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
     st.stop()
 
 
 # =============================================================================
 # UI — Results
 # =============================================================================
-scores = compute_risk_scores(sector, funding_stage, team_size,
-                             operations, data_sensitivity)
+_p               = st.session_state["profile"]
+startup_name     = _p["startup_name"]
+sector           = _p["sector"]
+funding_stage    = _p["funding_stage"]
+team_size        = _p["team_size"]
+operations       = _p["operations"]
+data_sensitivity = _p["data_sensitivity"]
+product_description = _p.get("product_description", "")
+customer_type    = _p.get("customer_type", [])
+data_handled     = _p.get("data_handled", [])
+regulatory       = _p.get("regulatory", [])
+physical_assets  = _p.get("physical_assets", [])
+has_investors    = _p.get("has_investors", "No")
+biggest_fear     = _p.get("biggest_fear", "")
+
+if st.button("← Edit profile"):
+    st.session_state["show_results"] = False
+    st.session_state["_bundle_data"] = None
+    st.rerun()
+
+scores = compute_risk_scores(sector, funding_stage, team_size, operations, data_sensitivity)
 recommendations = recommend_products(scores, sector, team_size, funding_stage)
 
 # Profile strip
-st.markdown(
-    f"## {SECTOR_PROFILES[sector]['emoji']} Profile: **{startup_name}**"
-)
+st.markdown(f"## {SECTOR_PROFILES[sector]['emoji']} Profile: **{startup_name}**")
 meta_col1, meta_col2, meta_col3, meta_col4 = st.columns(4)
 meta_col1.metric("Sector", sector.split(" /")[0])
 meta_col2.metric("Stage", funding_stage)
@@ -932,104 +1191,111 @@ st.markdown(
 
 st.markdown("---")
 
-# Product recommendations
+# Insurance plan
 st.markdown(
-    '<div class="section-heading">Recommended ICICI Lombard Products</div>'
-    '<div class="section-sub">Top recommendations ranked by fit score. Group Health Insurance is always included as a baseline.</div>',
+    '<div class="section-heading">Your Insurance Plan</div>'
+    '<div class="section-sub">Gemini AI groups your needs into coherent bundles — '
+    "each product comes with a reason specific to your startup.</div>",
     unsafe_allow_html=True,
 )
 
-for rec in recommendations:
-    priority     = rec["priority"]
-    css_class    = priority_css(priority)
-    is_mandatory = rec.get("mandatory", False)
+if st.session_state.get("_bundle_data") is None and _GENAI_AVAILABLE:
+    with st.spinner("✨ Gemini is crafting your tailored insurance plan…"):
+        st.session_state["_bundle_data"] = generate_bundles(
+            startup_name=startup_name, sector=sector, stage=funding_stage,
+            team_size=team_size, operations=operations,
+            data_sensitivity=data_sensitivity, scores=scores,
+            product_description=product_description, customer_type=customer_type,
+            data_handled=data_handled, regulatory=regulatory,
+            physical_assets=physical_assets, has_investors=has_investors,
+            biggest_fear=biggest_fear,
+        )
 
-    mandatory_badge = (
-        '<span style="background:#DCFCE7;color:#166534;font-size:0.65rem;'
-        'font-weight:700;padding:2px 9px;border-radius:20px;letter-spacing:0.05em;'
-        'text-transform:uppercase;margin-left:8px;">Baseline</span>'
-    ) if is_mandatory else ""
+bundle_result = st.session_state.get("_bundle_data")
 
-    st.markdown(
-        f"""
-        <div class="product-card">
-          <div style="display:flex;justify-content:space-between;align-items:center;
-                      margin-bottom:0.4rem;">
-            <h4>{rec['name']}{mandatory_badge}</h4>
-            <span class="{css_class}">{priority}</span>
-          </div>
-          <div style="color:#94A3B8;font-size:0.8rem;margin-bottom:0.5rem;">
-            <strong style="color:#475569;">ICICI Lombard:</strong> {rec['il_product']}
-          </div>
-          <div style="font-size:0.86rem;color:#0F172A;line-height:1.6;">
-            <strong>What it covers:</strong> {rec['what_it_covers']}
-          </div>
-          <div class="nudge-box">
-            <strong>Why you need this:</strong> {rec['nudge']}
-          </div>
-          <div style="margin-top:0.6rem;font-size:0.78rem;color:#94A3B8;">
-            Best for: {rec['best_for']} &nbsp;&middot;&nbsp;
-            Fit score: <strong style="color:#475569;">{rec['score']:.0f}/100</strong>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+if bundle_result and "bundles" in bundle_result:
+    for bundle in bundle_result["bundles"]:
+        st.markdown(render_bundle_card(bundle), unsafe_allow_html=True)
+    if bundle_result.get("bottom_line"):
+        st.markdown(
+            f'<div class="verdict-card" style="margin-top:1rem;">'
+            f'<span style="font-size:1.1rem;flex-shrink:0;">💡</span>'
+            f'<span><strong>Bottom line:</strong> {bundle_result["bottom_line"]}</span>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+else:
+    if not _GENAI_AVAILABLE:
+        st.info(
+            "Add your **GEMINI_API_KEY** to `.streamlit/secrets.toml` to get "
+            "AI-powered bundle recommendations. Showing rule-based results below."
+        )
+    for rec in recommendations:
+        priority     = rec["priority"]
+        css_class    = priority_css(priority)
+        is_mandatory = rec.get("mandatory", False)
+        mandatory_badge = (
+            '<span style="background:#DCFCE7;color:#166534;font-size:0.65rem;'
+            'font-weight:700;padding:2px 9px;border-radius:20px;letter-spacing:0.05em;'
+            'text-transform:uppercase;margin-left:8px;">Baseline</span>'
+        ) if is_mandatory else ""
+        st.markdown(
+            f"""
+            <div class="product-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;
+                          margin-bottom:0.4rem;">
+                <h4>{rec['name']}{mandatory_badge}</h4>
+                <span class="{css_class}">{priority}</span>
+              </div>
+              <div style="color:#94A3B8;font-size:0.8rem;margin-bottom:0.5rem;">
+                <strong style="color:#475569;">ICICI Lombard:</strong> {rec['il_product']}
+              </div>
+              <div style="font-size:0.86rem;color:#0F172A;line-height:1.6;">
+                <strong>What it covers:</strong> {rec['what_it_covers']}
+              </div>
+              <div class="nudge-box">
+                <strong>Why you need this:</strong> {rec['nudge']}
+              </div>
+              <div style="margin-top:0.6rem;font-size:0.78rem;color:#94A3B8;">
+                Best for: {rec['best_for']} &nbsp;&middot;&nbsp;
+                Fit score: <strong style="color:#475569;">{rec['score']:.0f}/100</strong>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 st.markdown("---")
 
-# Explainers
 with st.expander("Founder's explainer — what each of these actually means", expanded=False):
     st.markdown("""
         **No jargon. Just what you need to know as a founder.**
 
-        - **Cyber Liability** — if your systems are hacked, this pays legal
-          bills, ransom response, customer notifications, and regulatory fines.
-        - **D&O Liability** — if somebody sues *you personally* (investor,
-          employee, regulator) over a business decision, this protects your
-          savings and home.
-        - **Professional Indemnity** — if a paying customer says your product
-          caused them loss (a bug, wrong advice, missed SLA), this covers
-          defence and damages.
-        - **Group Health + GPA** — standard employee benefits. Retention tool
-          first, compliance fallback second.
-        - **Fire / Property / Marine Transit** — for anyone with physical
-          things: offices, stock, equipment, shipments.
-        - **Product Liability** — for anyone selling physical products. Handles
-          the nightmare scenario: your product hurt a customer.
-        - **Employment Practices Liability** — for HR complaints (wrongful
-          termination, harassment, discrimination). Becomes essential past 25
-          employees.
-        - **Crime / Fidelity** — covers internal fraud, UPI scams, vendor
-          impersonation. Rising fast in India.
+        - **Cyber Liability** — if your systems are hacked, this pays legal bills, ransom response, customer notifications, and regulatory fines.
+        - **D&O Liability** — if somebody sues *you personally* over a business decision, this protects your savings and home.
+        - **Professional Indemnity** — if a client says your product caused them loss, this covers defence and damages.
+        - **Group Health + GPA** — standard employee benefits. Retention tool first, compliance fallback second.
+        - **Fire / Property / Marine Transit** — for anyone with physical things: offices, stock, equipment, shipments.
+        - **Product Liability** — for anyone selling physical products. Handles the nightmare scenario: your product hurt a customer.
+        - **Employment Practices Liability** — for HR complaints. Becomes essential past 25 employees.
+        - **Crime / Fidelity** — covers internal fraud, UPI scams, vendor impersonation. Rising fast in India.
     """)
 
 with st.expander("How we scored you — the logic behind the numbers"):
     st.markdown("""
         We combine **six inputs** into **five risk dimensions**:
 
-        1. **Sector baseline** — each sector has a characteristic risk shape
-           drawn from CB Insights failure analysis and Stanford's Startup
-           Genome work.
-        2. **Funding stage** — later stages attract higher investor scrutiny,
-           regulatory attention, and litigation exposure.
+        1. **Sector baseline** — each sector has a characteristic risk shape from 13 Indian startup categories.
+        2. **Funding stage** — later stages attract higher investor scrutiny, regulatory attention, and litigation exposure.
         3. **Team size** — larger teams raise HR, key-person, and compliance risk.
-        4. **Operations type** — digital-only amplifies cyber risk; physical
-           raises property/liability.
-        5. **Data sensitivity** — handling PII, health, or financial data pushes
-           cyber and compliance scores up sharply under DPDP Act 2023.
+        4. **Operations type** — digital-only amplifies cyber risk; physical raises property/liability.
+        5. **Data sensitivity** — handling PII, health, or financial data pushes cyber and compliance scores up sharply under DPDP Act 2023.
 
-        Scores are normalised to 0–100. Products are matched from a pool of 28 insurance types using a
-        weighted-risk mapping, plus sector-specific legal requirements (e.g.
-        clinical trials liability is near-mandatory for healthtech running
-        human studies).
+        Scores are normalised to 0–100. Products are matched from a pool of 28 insurance types using a weighted-risk mapping.
     """)
 
 st.markdown("---")
 st.caption(
-    "This prototype is a proof-of-concept built for ICICI Lombard. "
-    "All product names are mapped to real ICICI Lombard offerings. "
-    "Scores are indicative and meant to start a conversation with a "
-    "licensed broker or relationship manager — they do not replace "
-    "formal underwriting."
+    "Proof-of-concept built for ICICI Lombard. All product names are mapped to real ICICI Lombard offerings. "
+    "Scores are indicative and meant to start a conversation with a licensed broker — they do not replace formal underwriting."
 )
