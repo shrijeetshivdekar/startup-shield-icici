@@ -776,6 +776,15 @@ def generate_bundles(
         "team size, regulatory exposure, or stated fear. Do NOT write generic text.\n\n"
         "Return ONLY valid JSON — no markdown fences, no explanation:\n"
         "{\n"
+        '  "risk_narrative": "2-3 sentences interpreting the overall risk profile specific to this startup",\n'
+        '  "top_risks": [\n'
+        "    {\n"
+        '      "dimension": "exact dimension name e.g. Cyber Risk",\n'
+        '      "score": 100,\n'
+        '      "why": "2-3 sentences explaining why this score is high for THIS specific startup",\n'
+        '      "mitigation": "one concrete non-insurance action to reduce this risk (process, certification, tool, or policy)"\n'
+        "    }\n"
+        "  ],\n"
         '  "bundles": [\n'
         "    {\n"
         '      "name": "bundle name",\n'
@@ -801,6 +810,9 @@ def generate_bundles(
         + "\n\nPRODUCT CATALOG (use ONLY these exact keys):\n"
         + _catalog_for_prompt()
         + "\n\nRules:\n"
+        "- top_risks: include only dimensions with score >= 40, max 3 entries, ordered by score descending\n"
+        "- top_risks.why must mention specific details from this startup's profile (sector, data, team, fear)\n"
+        "- top_risks.mitigation must be a non-insurance action — never mention buying a policy here\n"
         "- Each bundle must contain 3–5 products\n"
         "- Use only product keys listed in the catalog above\n"
         "- why_for_you must reference specific details from this startup's profile\n"
@@ -1191,16 +1203,9 @@ st.markdown(
 
 st.markdown("---")
 
-# Insurance plan
-st.markdown(
-    '<div class="section-heading">Your Insurance Plan</div>'
-    '<div class="section-sub">Gemini AI groups your needs into coherent bundles — '
-    "each product comes with a reason specific to your startup.</div>",
-    unsafe_allow_html=True,
-)
-
+# ── Trigger Gemini (single call covers narrative + top_risks + bundles) ──
 if st.session_state.get("_bundle_data") is None and _GENAI_AVAILABLE:
-    with st.spinner("✨ Gemini is crafting your tailored insurance plan…"):
+    with st.spinner("✨ Gemini is analysing your risk profile and crafting your insurance plan…"):
         st.session_state["_bundle_data"] = generate_bundles(
             startup_name=startup_name, sector=sector, stage=funding_stage,
             team_size=team_size, operations=operations,
@@ -1212,6 +1217,80 @@ if st.session_state.get("_bundle_data") is None and _GENAI_AVAILABLE:
         )
 
 bundle_result = st.session_state.get("_bundle_data")
+
+# ── GenAI Risk Narrative ─────────────────────────────────────────────────
+if bundle_result and bundle_result.get("risk_narrative"):
+    st.markdown(
+        '<div class="section-heading">GenAI Risk Analysis</div>'
+        '<div class="section-sub">Gemini\'s interpretation of your specific risk profile.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div style="background:#F0F4FF;border:1px solid #C7D2FE;border-left:4px solid #6366F1;'
+        f'border-radius:12px;padding:1.1rem 1.4rem;margin-bottom:1.25rem;">'
+        f'<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.55rem;">'
+        f'<svg width="14" height="14" viewBox="0 0 24 24" fill="none">'
+        f'<path d="M12 2L9.5 9.5H2L8 14l-2.5 7.5L12 17l6.5 4.5L16 14l6-4.5H14.5L12 2z" '
+        f'fill="#6366F1"/></svg>'
+        f'<span style="font-size:0.7rem;font-weight:700;letter-spacing:0.1em;'
+        f'text-transform:uppercase;color:#6366F1;">Gemini Risk Assessment</span></div>'
+        f'<p style="font-size:0.92rem;color:#0F172A;line-height:1.7;margin:0;">'
+        f'{bundle_result["risk_narrative"]}</p>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+# ── Top Risk Dimensions ──────────────────────────────────────────────────
+if bundle_result and bundle_result.get("top_risks"):
+    top_risks = bundle_result["top_risks"]
+    st.markdown(
+        '<div class="section-heading" style="margin-top:0.5rem;">Top Risk Dimensions</div>'
+        '<div class="section-sub">What\'s driving your scores — and one action to reduce each risk.</div>',
+        unsafe_allow_html=True,
+    )
+    risk_cols = st.columns(min(len(top_risks), 3))
+    for i, risk in enumerate(top_risks[:3]):
+        score = risk.get("score", 0)
+        if score >= 70:
+            badge_bg, badge_color, border_color = "#FEE2E2", "#991B1B", "#EF4444"
+        else:
+            badge_bg, badge_color, border_color = "#FEF3C7", "#92400E", "#F59E0B"
+        with risk_cols[i]:
+            st.markdown(
+                f'<div style="background:#FFFFFF;border:1px solid {border_color}44;'
+                f'border-top:3px solid {border_color};border-radius:12px;'
+                f'padding:1.2rem 1.3rem;box-shadow:0 2px 8px rgba(15,23,42,0.06);">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                f'margin-bottom:0.75rem;">'
+                f'<div style="font-size:0.88rem;font-weight:600;color:#0F172A;">'
+                f'{risk.get("dimension", "")}</div>'
+                f'<div style="background:{badge_bg};color:{badge_color};font-size:0.85rem;'
+                f'font-weight:800;padding:3px 10px;border-radius:20px;">{score}</div>'
+                f'</div>'
+                f'<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.06em;'
+                f'text-transform:uppercase;color:#94A3B8;margin-bottom:0.35rem;">Why</div>'
+                f'<p style="font-size:0.84rem;color:#475569;line-height:1.65;margin:0 0 0.85rem 0;">'
+                f'{risk.get("why", "")}</p>'
+                f'<div style="background:#F1F5F9;border-radius:8px;padding:0.7rem 0.85rem;">'
+                f'<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.06em;'
+                f'text-transform:uppercase;color:#6366F1;margin-bottom:0.3rem;">Non-insurance action</div>'
+                f'<p style="font-size:0.83rem;color:#0F172A;line-height:1.6;margin:0;">'
+                f'{risk.get("mitigation", "")}</p>'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+    st.markdown("<br>", unsafe_allow_html=True)
+
+st.markdown("---")
+
+# ── Insurance Plan ───────────────────────────────────────────────────────
+st.markdown(
+    '<div class="section-heading">Your Insurance Plan</div>'
+    '<div class="section-sub">Gemini AI groups your needs into coherent bundles — '
+    "each product comes with a reason specific to your startup.</div>",
+    unsafe_allow_html=True,
+)
 
 if bundle_result and "bundles" in bundle_result:
     for bundle in bundle_result["bundles"]:
