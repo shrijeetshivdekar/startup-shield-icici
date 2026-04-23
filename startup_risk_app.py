@@ -45,24 +45,21 @@ st.markdown(
 
     /* ── Design tokens ── */
     :root {
-      --orange:       #E8521A;
-      --orange-dark:  #C04010;
-      --orange-tint:  rgba(232, 82, 26, 0.08);
-      --navy:         #1B3D7B;
-      --navy-dark:    #122960;
-      --navy-tint:    rgba(27, 61, 123, 0.08);
-      --ink:          #0F172A;
-      --ink-muted:    #475569;
-      --ink-faint:    #94A3B8;
-      --bg:           #FAFAF7;
-      --surface:      #F4F4F0;
-      --border:       #E5E5E0;
-      --white:        #FFFFFF;
-      --shadow-sm:    0 1px 2px rgba(15,23,42,.04), 0 4px 12px rgba(15,23,42,.04);
-      --shadow-md:    0 2px 4px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.08);
-      --r-card:       12px;
-      --r-input:      8px;
-      --r-btn:        10px;
+      --red:        #AD1E23;
+      --red-dark:   #7A1419;
+      --red-tint:   rgba(173, 30, 35, 0.08);
+      --ink:        #0F172A;
+      --ink-muted:  #475569;
+      --ink-faint:  #94A3B8;
+      --bg:         #FAFAF7;
+      --surface:    #F4F4F0;
+      --border:     #E5E5E0;
+      --white:      #FFFFFF;
+      --shadow-sm:  0 1px 2px rgba(15,23,42,.04), 0 4px 12px rgba(15,23,42,.04);
+      --shadow-md:  0 2px 4px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.08);
+      --r-card:     12px;
+      --r-input:    8px;
+      --r-btn:      10px;
     }
 
     /* ── Global ── */
@@ -134,8 +131,8 @@ st.markdown(
         font-family: 'Inter', sans-serif !important;
     }
     .stTextInput > div > div > input:focus {
-        border-color: var(--orange) !important;
-        box-shadow: 0 0 0 3px rgba(232,82,26,.12) !important;
+        border-color: var(--red) !important;
+        box-shadow: 0 0 0 3px rgba(173,30,35,.12) !important;
         outline: none !important;
     }
 
@@ -147,17 +144,17 @@ st.markdown(
         font-size: 0.88rem !important;
     }
     [data-testid="stSelectbox"] > div > div:focus-within {
-        border-color: var(--orange) !important;
-        box-shadow: 0 0 0 3px rgba(232,82,26,.12) !important;
+        border-color: var(--red) !important;
+        box-shadow: 0 0 0 3px rgba(173,30,35,.12) !important;
     }
 
     /* ── Slider (recolor thumb + filled track) ── */
     [data-testid="stSlider"] [role="slider"] {
-        background-color: var(--orange) !important;
-        border-color: var(--orange) !important;
+        background-color: var(--red) !important;
+        border-color: var(--red) !important;
     }
     [data-testid="stSlider"] [data-baseweb="slider"] > div > div > div:first-child {
-        background: var(--orange) !important;
+        background: var(--red) !important;
     }
 
     /* ── Slider label + value pill ── */
@@ -171,8 +168,8 @@ st.markdown(
         margin-bottom: 0.2rem;
     }
     .value-pill {
-        background: var(--orange-tint);
-        color: var(--orange);
+        background: var(--red-tint);
+        color: var(--red);
         font-weight: 700;
         font-size: 0.72rem;
         padding: 2px 9px;
@@ -183,8 +180,8 @@ st.markdown(
 
     /* ── Select slider ── */
     [data-testid="stSlider"] [data-baseweb="slider"] [role="slider"] {
-        background: var(--orange) !important;
-        border-color: var(--orange) !important;
+        background: var(--red) !important;
+        border-color: var(--red) !important;
     }
 
     /* ── Radio ── */
@@ -193,7 +190,7 @@ st.markdown(
     /* ── Button ── */
     [data-testid="stButton"] > button,
     .stButton > button {
-        background: var(--orange) !important;
+        background: var(--red) !important;
         border: none !important;
         border-radius: var(--r-btn) !important;
         color: white !important;
@@ -209,7 +206,7 @@ st.markdown(
     }
     [data-testid="stButton"] > button:hover,
     .stButton > button:hover {
-        background: var(--orange-dark) !important;
+        background: var(--red-dark) !important;
         transform: translateY(-1px) !important;
     }
     [data-testid="stButton"] > button:active,
@@ -280,14 +277,14 @@ st.markdown(
 
     /* Hero */
     .hero-block {
-        background: linear-gradient(135deg, #E8521A 0%, #1B3D7B 100%);
+        background: linear-gradient(135deg, #AD1E23 0%, #7A1419 100%);
         padding: 2.25rem 2.5rem;
         border-radius: 16px;
         color: white;
         margin-bottom: 2.25rem;
         position: relative;
         overflow: hidden;
-        box-shadow: 0 4px 24px rgba(232,82,26,.22);
+        box-shadow: 0 4px 24px rgba(173,30,35,.22);
     }
     .hero-block::before {
         content: '';
@@ -357,7 +354,7 @@ st.markdown(
     .info-card {
         background: var(--white);
         border: 1px solid var(--border);
-        border-left: 4px solid var(--orange);
+        border-left: 4px solid var(--red);
         border-radius: var(--r-card);
         padding: 1.1rem 1.3rem;
         margin-bottom: 1.75rem;
@@ -372,7 +369,7 @@ st.markdown(
         color: var(--ink-muted);
         line-height: 1.65;
     }
-    .info-card-body strong { color: var(--orange); font-weight: 600; }
+    .info-card-body strong { color: var(--red); font-weight: 600; }
 
     /* Feature cards */
     .feature-grid {
@@ -396,7 +393,7 @@ st.markdown(
     .feature-icon {
         width: 40px;
         height: 40px;
-        background: var(--orange-tint);
+        background: var(--red-tint);
         border-radius: 10px;
         display: flex;
         align-items: center;
@@ -451,7 +448,7 @@ st.markdown(
     .product-card {
         background: var(--white);
         border: 1px solid var(--border);
-        border-left: 4px solid var(--orange);
+        border-left: 4px solid var(--red);
         border-radius: var(--r-card);
         padding: 1.2rem 1.4rem;
         margin: 0.6rem 0;
@@ -472,8 +469,8 @@ st.markdown(
 
     /* Priority badges — soft semantic tokens */
     .priority-critical {
-        background: #EEF2FF;
-        color: #1B3D7B;
+        background: #FEE2E2;
+        color: #991B1B;
         padding: 2px 10px;
         border-radius: 20px;
         font-size: 0.68rem;
@@ -482,8 +479,8 @@ st.markdown(
         text-transform: uppercase;
     }
     .priority-recommended {
-        background: #FFF4EF;
-        color: #C04010;
+        background: #FEF3C7;
+        color: #92400E;
         padding: 2px 10px;
         border-radius: 20px;
         font-size: 0.68rem;
@@ -563,8 +560,8 @@ def render_risk_radar(scores: dict):
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(
         r=values, theta=categories, fill='toself',
-        line=dict(color='#1B3D7B', width=2),
-        fillcolor='rgba(27,61,123,0.12)', name='Risk profile'
+        line=dict(color='#AD1E23', width=2),
+        fillcolor='rgba(173,30,35,0.15)', name='Risk profile'
     ))
     fig.update_layout(
         polar=dict(radialaxis=dict(visible=True, range=[0, 100],
@@ -587,8 +584,8 @@ def render_risk_bars(scores: dict):
     }).sort_values("Score", ascending=True)
 
     def band_color(s):
-        if s >= 70: return "#1B3D7B"
-        if s >= 40: return "#E8521A"
+        if s >= 70: return "#AD1E23"
+        if s >= 40: return "#F59E0B"
         return "#10B981"
 
     fig = go.Figure()
@@ -599,10 +596,10 @@ def render_risk_bars(scores: dict):
     fig.add_shape(type="rect", x0=40, x1=70,  y0=-0.5, y1=len(df) - 0.5,
                   fillcolor="rgba(245,158,11,0.05)", line_width=0, layer="below")
     fig.add_shape(type="rect", x0=70, x1=100, y0=-0.5, y1=len(df) - 0.5,
-                  fillcolor="rgba(232,82,26,0.05)", line_width=0, layer="below")
+                  fillcolor="rgba(173,30,35,0.05)", line_width=0, layer="below")
 
     # Threshold lines with labels
-    for x_val, label, color in [(40, "Recommended", "#F59E0B"), (70, "Critical", "#1B3D7B")]:
+    for x_val, label, color in [(40, "Recommended", "#F59E0B"), (70, "Critical", "#AD1E23")]:
         fig.add_vline(x=x_val, line_dash="dot", line_color=color,
                       line_width=1.2, opacity=0.6)
         fig.add_annotation(x=x_val, y=len(df) - 0.1, text=label,
@@ -641,8 +638,8 @@ def render_risk_scorecards(scores: dict) -> str:
     """Returns HTML for 5 mini scorecard tiles — one per risk dimension."""
 
     def band(s):
-        if s >= 70: return "#1B3D7B", "#EEF2FF", "Critical"
-        if s >= 40: return "#E8521A", "#FFF4EF", "Watch"
+        if s >= 70: return "#AD1E23", "#FEF2F2", "Critical"
+        if s >= 40: return "#D97706", "#FFFBEB", "Watch"
         return "#059669", "#ECFDF5", "Low"
 
     # Inline SVG icon paths (viewBox 0 0 24 24, stroke-based)
@@ -856,7 +853,7 @@ def generate_bundles(
 def render_bundle_card(bundle: dict) -> str:
     """Returns the HTML string for one insurance bundle card."""
     priority = bundle.get("priority", "Recommended")
-    border_color = "#1B3D7B" if priority == "Critical" else "#E8521A"
+    border_color = "#AD1E23" if priority == "Critical" else "#F59E0B"
     priority_class = "priority-critical" if priority == "Critical" else "priority-recommended"
 
     products_html = ""
@@ -867,7 +864,7 @@ def render_bundle_card(bundle: dict) -> str:
             f'<div style="font-size:0.9rem;font-weight:600;color:#0F172A;'
             f'margin-bottom:0.35rem;">{p.get("name", "")}</div>'
             f'<div style="font-size:0.83rem;color:#475569;line-height:1.65;">'
-            f'<strong style="color:#E8521A;">Why for you:</strong> '
+            f'<strong style="color:#AD1E23;">Why for you:</strong> '
             f'{p.get("why_for_you", "")}</div>'
             "</div>"
         )
@@ -924,7 +921,7 @@ st.markdown(
       <div class="hero-title">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
           <path d="M12 2L4 5.5v5.25C4 15.36 7.53 19.9 12 21.25 16.47 19.9 20 15.36 20 10.75V5.5L12 2z" fill="white"/>
-          <path d="M9 12l2 2 4-4" stroke="#E8521A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M9 12l2 2 4-4" stroke="#AD1E23" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         SPARC &nbsp;·&nbsp; ICICI Lombard
       </div>
@@ -944,7 +941,7 @@ with st.sidebar:
         """
         <div style="text-align:center;padding:1.25rem 0 1.75rem;">
           <svg width="38" height="38" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L4 5.5v5.25C4 15.36 7.53 19.9 12 21.25 16.47 19.9 20 15.36 20 10.75V5.5L12 2z" fill="#E8521A"/>
+            <path d="M12 2L4 5.5v5.25C4 15.36 7.53 19.9 12 21.25 16.47 19.9 20 15.36 20 10.75V5.5L12 2z" fill="#AD1E23"/>
             <path d="M9 12l2 2 4-4" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           <div style="font-size:0.95rem;font-weight:700;color:#0F172A;margin-top:0.65rem;letter-spacing:-0.01em;">
@@ -969,7 +966,7 @@ with st.sidebar:
             '<div class="privacy-badge" style="margin-top:1.5rem;">'
             '<svg width="13" height="13" viewBox="0 0 13 13" fill="none">'
             '<path d="M6.5 1.5L2 3.8v3.2c0 2.8 1.9 5.4 4.5 6.1 2.6-.7 4.5-3.3 4.5-6.1V3.8L6.5 1.5z"'
-            ' fill="#E8521A" opacity="0.8"/></svg>'
+            ' fill="#AD1E23" opacity="0.8"/></svg>'
             " AI-powered bundles are active. Inputs are processed via a secure API."
             "</div>",
             unsafe_allow_html=True,
@@ -1254,9 +1251,9 @@ if bundle_result and bundle_result.get("top_risks"):
     for i, risk in enumerate(top_risks[:3]):
         score = risk.get("score", 0)
         if score >= 70:
-            badge_bg, badge_color, border_color = "#EEF2FF", "#1B3D7B", "#1B3D7B"
+            badge_bg, badge_color, border_color = "#FEE2E2", "#991B1B", "#EF4444"
         else:
-            badge_bg, badge_color, border_color = "#FFF4EF", "#C04010", "#E8521A"
+            badge_bg, badge_color, border_color = "#FEF3C7", "#92400E", "#F59E0B"
         with risk_cols[i]:
             st.markdown(
                 f'<div style="background:#FFFFFF;border:1px solid {border_color}44;'
