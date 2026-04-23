@@ -1,5 +1,5 @@
 """
-Startup Profiling and Risk Assessment using GenAI-style Rule Logic
+SPARC — Startup Profiling and Risk Coverage
 ===================================================================
 Recommends tailor-made ICICI Lombard insurance products for Indian startups.
 
@@ -28,7 +28,7 @@ from risk_engine import (
 # PAGE CONFIGURATION — first Streamlit call, controls tab title and layout
 # =============================================================================
 st.set_page_config(
-    page_title="Startup Shield · ICICI Lombard",
+    page_title="SPARC · ICICI Lombard",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -923,10 +923,9 @@ st.markdown(
           <path d="M12 2L4 5.5v5.25C4 15.36 7.53 19.9 12 21.25 16.47 19.9 20 15.36 20 10.75V5.5L12 2z" fill="white"/>
           <path d="M9 12l2 2 4-4" stroke="#AD1E23" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        Startup Shield &nbsp;·&nbsp; ICICI Lombard
+        SPARC &nbsp;·&nbsp; ICICI Lombard
       </div>
-      <p class="hero-tagline">Tailored insurance recommendations for Indian startups —
-        powered by sector-aware GenAI risk logic.</p>
+      <p class="hero-tagline">Startup Profiling and Risk Coverage — GenAI-powered insurance recommendations tailored to your startup's unique risk profile.</p>
       <hr class="hero-rule"/>
       <p class="hero-micro">Powered by GenAI &nbsp;·&nbsp; Built for Indian startups &nbsp;·&nbsp; ICICI Lombard</p>
     </div>
@@ -946,7 +945,7 @@ with st.sidebar:
             <path d="M9 12l2 2 4-4" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           <div style="font-size:0.95rem;font-weight:700;color:#0F172A;margin-top:0.65rem;letter-spacing:-0.01em;">
-            Startup Shield
+            SPARC
           </div>
           <div style="font-size:0.72rem;color:#94A3B8;margin-top:0.15rem;">ICICI Lombard</div>
         </div>
