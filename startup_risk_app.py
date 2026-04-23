@@ -519,8 +519,12 @@ st.markdown(
 
 
 # =============================================================================
-# GENAI — Gemini 1.5 Flash (optional; graceful fallback if key absent)
+# GENAI — locked to gemini-2.5-flash-lite (free tier, lowest cost model)
+# Do NOT change _GEMINI_MODEL to flash, pro, or ultra variants — they are paid.
 # =============================================================================
+_GEMINI_MODEL = "gemini-2.5-flash-lite"   # cheapest available; do not upgrade
+_GEMINI_MAX_TOKENS = 1500                  # hard cap to prevent runaway spend
+
 _GENAI_AVAILABLE = False
 _GEMINI_CLIENT = None
 
@@ -823,11 +827,12 @@ def generate_bundles(
 
     try:
         response = _GEMINI_CLIENT.models.generate_content(
-            model="gemini-2.5-flash-lite",
+            model=_GEMINI_MODEL,
             contents=prompt,
             config=_genai_types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=0.4,
+                max_output_tokens=_GEMINI_MAX_TOKENS,
             ),
         )
         result = json.loads(response.text)
