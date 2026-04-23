@@ -928,7 +928,7 @@ st.markdown(
       <p class="hero-tagline">Tailored insurance recommendations for Indian startups —
         powered by sector-aware GenAI risk logic.</p>
       <hr class="hero-rule"/>
-      <p class="hero-micro">Powered by Google Gemini &nbsp;·&nbsp; Built for Indian startups &nbsp;·&nbsp; ICICI Lombard</p>
+      <p class="hero-micro">Powered by GenAI &nbsp;·&nbsp; Built for Indian startups &nbsp;·&nbsp; ICICI Lombard</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -958,7 +958,7 @@ with st.sidebar:
     st.markdown("""
 1. **Fill the form** with your startup details
 2. **Click Analyse** to compute your 5-dimension risk scores
-3. **Gemini AI** groups your coverage needs into named bundles with startup-specific reasoning
+3. **AI** groups your coverage needs into named bundles with startup-specific reasoning
 4. **Review & act** — speak to an ICICI Lombard RM to bind cover
     """)
 
@@ -968,7 +968,7 @@ with st.sidebar:
             '<svg width="13" height="13" viewBox="0 0 13 13" fill="none">'
             '<path d="M6.5 1.5L2 3.8v3.2c0 2.8 1.9 5.4 4.5 6.1 2.6-.7 4.5-3.3 4.5-6.1V3.8L6.5 1.5z"'
             ' fill="#AD1E23" opacity="0.8"/></svg>'
-            " AI bundles powered by Google Gemini 2.5. Inputs are sent to Google's API."
+            " AI-powered bundles are active. Inputs are processed via a secure API."
             "</div>",
             unsafe_allow_html=True,
         )
@@ -1035,7 +1035,7 @@ if not st.session_state.get("show_results"):
         '<span style="font-size:0.68rem;background:#EEF2FF;color:#3730A3;'
         'padding:2px 8px;border-radius:10px;margin-left:6px;font-weight:600;">'
         "Powers AI bundles</span></div>"
-        '<div class="section-sub">The more detail you give, the more specific Gemini\'s reasoning.</div>',
+        '<div class="section-sub">The more detail you give, the more specific the AI\'s reasoning.</div>',
         unsafe_allow_html=True,
     )
 
@@ -1205,7 +1205,7 @@ st.markdown("---")
 
 # ── Trigger Gemini (single call covers narrative + top_risks + bundles) ──
 if st.session_state.get("_bundle_data") is None and _GENAI_AVAILABLE:
-    with st.spinner("✨ Gemini is analysing your risk profile and crafting your insurance plan…"):
+    with st.spinner("✨ Analysing your risk profile and crafting your insurance plan…"):
         st.session_state["_bundle_data"] = generate_bundles(
             startup_name=startup_name, sector=sector, stage=funding_stage,
             team_size=team_size, operations=operations,
@@ -1222,7 +1222,7 @@ bundle_result = st.session_state.get("_bundle_data")
 if bundle_result and bundle_result.get("risk_narrative"):
     st.markdown(
         '<div class="section-heading">GenAI Risk Analysis</div>'
-        '<div class="section-sub">Gemini\'s interpretation of your specific risk profile.</div>',
+        '<div class="section-sub">AI interpretation of your specific risk profile.</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -1233,7 +1233,7 @@ if bundle_result and bundle_result.get("risk_narrative"):
         f'<path d="M12 2L9.5 9.5H2L8 14l-2.5 7.5L12 17l6.5 4.5L16 14l6-4.5H14.5L12 2z" '
         f'fill="#6366F1"/></svg>'
         f'<span style="font-size:0.7rem;font-weight:700;letter-spacing:0.1em;'
-        f'text-transform:uppercase;color:#6366F1;">Gemini Risk Assessment</span></div>'
+        f'text-transform:uppercase;color:#6366F1;">AI Risk Assessment</span></div>'
         f'<p style="font-size:0.92rem;color:#0F172A;line-height:1.7;margin:0;">'
         f'{bundle_result["risk_narrative"]}</p>'
         f'</div>',
@@ -1287,7 +1287,7 @@ st.markdown("---")
 # ── Insurance Plan ───────────────────────────────────────────────────────
 st.markdown(
     '<div class="section-heading">Your Insurance Plan</div>'
-    '<div class="section-sub">Gemini AI groups your needs into coherent bundles — '
+    '<div class="section-sub">AI groups your needs into coherent bundles — '
     "each product comes with a reason specific to your startup.</div>",
     unsafe_allow_html=True,
 )
