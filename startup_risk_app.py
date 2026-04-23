@@ -523,7 +523,7 @@ st.markdown(
 # Do NOT change _GEMINI_MODEL to flash, pro, or ultra variants — they are paid.
 # =============================================================================
 _GEMINI_MODEL = "gemini-2.5-flash-lite"   # cheapest available; do not upgrade
-_GEMINI_MAX_TOKENS = 1500                  # hard cap to prevent runaway spend
+_GEMINI_MAX_TOKENS = 2048                  # fits full JSON response; still within free tier
 
 _GENAI_AVAILABLE = False
 _GEMINI_CLIENT = None
@@ -835,8 +835,20 @@ def generate_bundles(
                 max_output_tokens=_GEMINI_MAX_TOKENS,
             ),
         )
+        # Detect truncation before attempting JSON parse
+        try:
+            finish_reason = response.candidates[0].finish_reason
+            if str(finish_reason) in ("FinishReason.MAX_TOKENS", "MAX_TOKENS", "2"):
+                st.warning(
+                    "⚠️ AI response was cut short (output limit reached). "
+                    "Showing rule-based recommendations instead."
+                )
+                return None
+        except (AttributeError, IndexError):
+            pass
+
         result = json.loads(response.text)
-        # Sanitize: remove any product keys Gemini hallucinated (not in catalog)
+        # Sanitize: remove any product keys not in catalog
         valid_keys = set(PRODUCT_CATALOG.keys())
         for bundle in result.get("bundles", []):
             bundle["products"] = [
@@ -847,9 +859,15 @@ def generate_bundles(
             if bundle.get("priority") not in ("Critical", "Recommended"):
                 bundle["priority"] = "Recommended"
         return result
+    except json.JSONDecodeError:
+        st.warning(
+            "⚠️ AI returned malformed output. "
+            "Showing rule-based recommendations instead."
+        )
+        return None
     except Exception as exc:
         st.warning(
-            f"⚠️ AI bundle generation hit an issue ({exc}). "
+            f"⚠️ AI unavailable ({exc}). "
             "Showing rule-based recommendations instead."
         )
         return None
