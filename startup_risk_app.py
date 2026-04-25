@@ -19,10 +19,54 @@ import plotly.graph_objects as go
 import pandas as pd
 from risk_engine import (
     SECTOR_PROFILES,
+    SUB_SECTOR_PROFILES,
     PRODUCT_CATALOG,
+    REGULATORY_CITATIONS,
+    RISK_CATEGORY_STATS,
+    StartupInput,
     compute_risk_scores,
     recommend_products,
+    check_hard_decline_by_subsector,
 )
+
+# =============================================================================
+# RISK DISPLAY GROUPS — 4 clusters for grouped scorecards in results
+# =============================================================================
+RISK_DISPLAY_GROUPS = {
+    "Digital & Data": ["Cyber Technical Risk", "Data Privacy Risk", "IP Infringement Risk"],
+    "Legal & Governance": ["Liability Risk", "Governance & Fraud Risk", "Regulatory Compliance Risk"],
+    "Operational": ["Key Person Risk", "Property Risk", "Gig & Labour Risk"],
+    "Macro & Emerging": ["ESG & Climate Risk", "Geopolitical Risk", "Policy Velocity Risk", "Reputation Risk"],
+}
+
+# Sub-sector options keyed by sector name
+SUB_SECTOR_OPTIONS = {
+    "Fintech": [
+        "Fintech.NBFC_Digital_Lending", "Fintech.PA_PG", "Fintech.PA_Cross_Border",
+        "Fintech.WealthTech_EOP", "Fintech.Neobank_PPI", "Fintech.InsurTech",
+        "Fintech.Account_Aggregator",
+    ],
+    "Healthtech": [
+        "Healthtech.Telemedicine", "Healthtech.Diagnostics",
+        "Healthtech.PharmaTech_ePharmacy", "Healthtech.MedDevice_SaMD",
+        "Healthtech.Clinical_Trials_SaaS",
+    ],
+    "Gaming / Media / Content": [
+        "Gaming.Real_Money", "Gaming.Casual_Esports", "Gaming.OTT", "Gaming.Creator_Economy",
+    ],
+    "Logistics / Mobility": [
+        "Logistics.Last_Mile_Delivery", "Logistics.B2B_Freight", "Logistics.EV_OEM",
+    ],
+    "D2C / Consumer Brands": [
+        "D2C.Hardware_Electronics", "D2C.Food_Beverage", "D2C.Apparel_Footwear",
+    ],
+    "Deeptech / AI / Robotics": [
+        "Deeptech.AI_Software", "Deeptech.Hardware_Robotics",
+    ],
+    "Edtech": [
+        "Edtech.K12_Children", "Edtech.Test_Prep_Adult",
+    ],
+}
 
 # =============================================================================
 # PAGE CONFIGURATION — first Streamlit call, controls tab title and layout
@@ -628,8 +672,8 @@ def render_risk_bars(scores: dict):
                    tickfont=dict(color="#94A3B8", size=10),
                    title=dict(text="Risk Score (0–100)",
                               font=dict(size=10, color="#94A3B8"))),
-        yaxis=dict(title="", tickfont=dict(size=12, color="#0F172A")),
-        height=320,
+        yaxis=dict(title="", tickfont=dict(size=11, color="#0F172A")),
+        height=550,
         margin=dict(l=20, r=60, t=30, b=30),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -639,72 +683,49 @@ def render_risk_bars(scores: dict):
 
 
 def render_risk_scorecards(scores: dict) -> str:
-    """Returns HTML for 5 mini scorecard tiles — one per risk dimension."""
+    """Returns HTML for mini scorecard tiles — one per risk dimension (handles 13 categories)."""
 
     def band(s):
         if s >= 70: return "#AD1E23", "#FEF2F2", "Critical"
         if s >= 40: return "#D97706", "#FFFBEB", "Watch"
         return "#059669", "#ECFDF5", "Low"
 
-    # Inline SVG icon paths (viewBox 0 0 24 24, stroke-based)
-    icons = {
-        "Cyber Risk": (
-            '<path d="M12 2L4 6v5c0 5.25 3.4 10.15 8 11.35C16.6 21.15 20 16.25 '
-            '20 11V6L12 2z" stroke="currentColor" stroke-width="1.5" fill="none"/>'
-        ),
-        "Liability Risk": (
-            '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" '
-            'stroke="currentColor" stroke-width="1.5" fill="none"/>'
-            '<path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.5" '
-            'stroke-linecap="round" fill="none"/>'
-        ),
-        "Key Person Risk": (
-            '<circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5" fill="none"/>'
-            '<path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" '
-            'stroke-width="1.5" stroke-linecap="round" fill="none"/>'
-        ),
-        "Property Risk": (
-            '<path d="M3 12l9-9 9 9M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9" '
-            'stroke="currentColor" stroke-width="1.5" stroke-linecap="round" '
-            'stroke-linejoin="round" fill="none"/>'
-        ),
-        "Compliance Risk": (
-            '<path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.5" '
-            'stroke-linecap="round" fill="none"/>'
-            '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5" fill="none"/>'
-        ),
-    }
+    # Generic shield icon used for all categories
+    _shield_path = (
+        '<path d="M12 2L4 5.5v5.25C4 15.36 7.53 19.9 12 21.25'
+        ' 16.47 19.9 20 15.36 20 10.75V5.5L12 2z"'
+        ' stroke="currentColor" stroke-width="1.5" fill="none"/>'
+    )
 
     cards_html = (
         '<style>body{margin:0;background:transparent;'
         "font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;}</style>"
-        '<div style="display:flex;flex-direction:column;gap:10px;">'
+        '<div style="display:flex;flex-direction:column;gap:8px;">'
     )
     for dim, score in scores.items():
         color, bg, label = band(score)
-        icon_path = icons.get(dim, "")
         bar_pct = int(min(score, 100))
         cards_html += (
             f'<div style="background:{bg};border:1px solid {color}22;border-radius:10px;'
-            f'padding:10px 14px;display:flex;align-items:center;gap:12px;">'
-            f'<div style="flex-shrink:0;width:32px;height:32px;border-radius:8px;'
+            f'padding:9px 12px;display:flex;align-items:center;gap:10px;">'
+            f'<div style="flex-shrink:0;width:28px;height:28px;border-radius:7px;'
             f'background:{color}15;display:flex;align-items:center;'
             f'justify-content:center;color:{color};">'
-            f'<svg width="16" height="16" viewBox="0 0 24 24">{icon_path}</svg>'
+            f'<svg width="14" height="14" viewBox="0 0 24 24">{_shield_path}</svg>'
             f'</div>'
             f'<div style="flex:1;min-width:0;">'
-            f'<div style="font-size:0.7rem;font-weight:600;color:#475569;'
-            f'letter-spacing:0.03em;margin-bottom:4px;white-space:nowrap;'
+            f'<div style="font-size:0.67rem;font-weight:600;color:#475569;'
+            f'letter-spacing:0.02em;margin-bottom:4px;white-space:nowrap;'
             f'overflow:hidden;text-overflow:ellipsis;">{dim}</div>'
-            f'<div style="background:#E5E5E0;border-radius:4px;height:5px;width:100%;">'
-            f'<div style="background:{color};height:5px;border-radius:4px;'
+            f'<div style="background:#E5E5E0;border-radius:4px;height:4px;width:100%;">'
+            f'<div style="background:{color};height:4px;border-radius:4px;'
             f'width:{bar_pct}%;"></div>'
             f'</div>'
             f'</div>'
-            f'<div style="flex-shrink:0;text-align:right;min-width:42px;">'
-            f'<div style="font-size:1.1rem;font-weight:800;color:{color};'
+            f'<div style="flex-shrink:0;text-align:right;min-width:38px;">'
+            f'<div style="font-size:1rem;font-weight:800;color:{color};'
             f'line-height:1;">{score:.0f}</div>'
-            f'<div style="font-size:0.6rem;font-weight:600;color:{color};'
+            f'<div style="font-size:0.58rem;font-weight:600;color:{color};'
             f'opacity:0.75;letter-spacing:0.05em;'
             f'text-transform:uppercase;">{label}</div>'
             f'</div>'
@@ -1033,6 +1054,22 @@ if not st.session_state.get("show_results"):
 
     st.caption(f"{SECTOR_PROFILES[sector]['emoji']}  {SECTOR_PROFILES[sector]['description']}")
 
+    _sub_opts = SUB_SECTOR_OPTIONS.get(sector, [])
+    sub_sector: str | None = None
+    if _sub_opts:
+        _sub_raw = st.selectbox(
+            "Sub-sector (optional — refines risk scores)",
+            ["— General —"] + _sub_opts,
+            help="Select your specific business model for a more precise regulatory risk assessment.",
+        )
+        sub_sector = None if _sub_raw == "— General —" else _sub_raw
+
+    if sub_sector:
+        _decline_msg = check_hard_decline_by_subsector(sub_sector)
+        if _decline_msg:
+            st.error(f"**Coverage unavailable for this sub-sector.** {_decline_msg}")
+            st.stop()
+
     fr1, fr2, fr3 = st.columns([1.2, 1, 1])
     with fr1:
         team_size = st.slider("Team size (FTEs)", 1, 500, 15)
@@ -1127,13 +1164,165 @@ if not st.session_state.get("show_results"):
         height=80,
     )
 
+    st.markdown("---")
+    st.markdown(
+        '<div class="section-heading">Advanced Risk Inputs '
+        '<span style="font-size:0.68rem;background:#F0FDF4;color:#166534;'
+        'padding:2px 8px;border-radius:10px;margin-left:6px;font-weight:600;">'
+        "Optional — sharpens 13-category scoring</span></div>"
+        '<div class="section-sub">Expand any section that applies to your startup.</div>',
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("Governance & Capital"):
+        gc1, gc2, gc3 = st.columns(3)
+        with gc1:
+            investor_cn_hk_pct = st.slider(
+                "China / HK investor BO %", 0, 100, 0,
+                help="Beneficial ownership from China/Hong Kong — triggers DPIIT Press Note 3 government-route FDI.",
+            ) / 100
+            cumulative_fundraising_inr_cr = st.number_input(
+                "Total fundraising (₹ Cr)", min_value=0.0, value=0.0, step=10.0,
+                help="Cumulative raise in INR crore. ₹2,000cr+ triggers Competition Act DVT.",
+            )
+        with gc2:
+            holdco_domicile = st.selectbox(
+                "Holdco domicile",
+                ["India", "DE", "SG", "Cayman", "Flip_pending"],
+                help="Where your ultimate parent entity is incorporated.",
+            )
+            founder_concentration_index = st.slider(
+                "Founder concentration index", 0.0, 1.0, 0.5,
+                help="(founder equity %) × (1 − independent director %). "
+                     "0 = fully distributed, 1 = sole founder with no independent board.",
+            )
+        with gc3:
+            dpiit_recognition = st.checkbox("DPIIT recognised startup", value=False)
+            _rbi_raw = st.selectbox(
+                "RBI registration (if any)",
+                ["None", "NBFC", "PA", "PPI", "RIA", "AA"],
+            )
+            rbi_registration = None if _rbi_raw == "None" else _rbi_raw
+
+    with st.expander("Workforce & Gig Risk"):
+        wf1, wf2 = st.columns(2)
+        with wf1:
+            gig_headcount_pct = st.slider(
+                "Gig / contractor workforce %", 0, 100, 0,
+                help="% of total headcount that are gig workers or contractors. "
+                     "Triggers Social Security Code §113-114 aggregator levy.",
+            ) / 100
+            posh_ic_constituted = st.checkbox(
+                "POSH Act Internal Committee constituted", value=False,
+                help="POSH Act 2013 §4 — mandatory once you have 10+ employees.",
+            )
+        with wf2:
+            state_footprint = st.multiselect(
+                "States with significant operations",
+                ["Karnataka", "Rajasthan", "Bihar", "Jharkhand", "Telangana",
+                 "Maharashtra", "Delhi", "Tamil Nadu", "Gujarat", "Other"],
+                help="Gig worker legislation is most aggressive in Karnataka, Rajasthan, Bihar, Jharkhand, Telangana.",
+            )
+            cert_in_poc_designated = st.checkbox(
+                "CERT-In POC designated", value=False,
+                help="CERT-In Directions 28-Apr-2022 — mandatory for qualifying entities (6-hr breach reporting).",
+            )
+
+    with st.expander("Data & AI Risk"):
+        da1, da2 = st.columns(2)
+        with da1:
+            sdf_probability = st.slider(
+                "SDF designation likelihood %", 0, 100, 0,
+                help="DPDPA §10 Significant Data Fiduciary. High if you process data of 10M+ users "
+                     "or handle sensitive personal data at scale (₹250cr breach penalty).",
+            ) / 100
+            data_localisation_status = st.selectbox(
+                "Data localisation status",
+                ["Unknown", "Full_onshore", "Hybrid", "Offshore"],
+                help="Where customer data is stored and processed.",
+            )
+        with da2:
+            ai_in_product = st.checkbox(
+                "AI / ML in core product", value=False,
+                help="Triggers MeitY AI Advisory (15-Mar-2024) and SGI Rules (10-Feb-2026) compliance obligations.",
+            )
+            hardware_software_split = st.slider(
+                "Hardware revenue %", 0, 100, 0,
+                help="% of revenue from physical hardware or manufactured products (BIS QCO, BEE compliance).",
+            ) / 100
+
+    with st.expander("Market & Supply Chain"):
+        ms1, ms2 = st.columns(2)
+        with ms1:
+            b2b_pct = st.slider(
+                "B2B revenue %", 0, 100, 50,
+                help="Higher B2B % elevates professional indemnity and contractual liability exposure.",
+            ) / 100
+            export_eu_pct = st.slider(
+                "EU revenue %", 0, 100, 0,
+                help="EU exports trigger CBAM (1-Jan-2026) and EU AI Act extraterritorial reach.",
+            ) / 100
+            export_us_pct = st.slider("US revenue %", 0, 100, 0) / 100
+        with ms2:
+            export_china_pct = st.slider("China revenue %", 0, 100, 0) / 100
+            chinese_supplier_pct_cogs = st.slider(
+                "Chinese supplier % of COGS", 0, 100, 0,
+                help="Supply-chain PN3 / geopolitical exposure.",
+            ) / 100
+            listed_customer_brsr_dependency = st.checkbox(
+                "Listed customers requiring BRSR value-chain data", value=False,
+                help="SEBI BRSR Core Circular (28-Mar-2025) pushes ESG obligations to supplier startups.",
+            )
+
+    with st.expander("Physical & Environmental"):
+        pe1, pe2 = st.columns(2)
+        with pe1:
+            facility_climate_risk_zone = st.selectbox(
+                "Facility climate risk zone",
+                ["Low", "Medium", "High", "Extreme"],
+                help="IMD / NDMA climate hazard classification for your primary facility location.",
+            )
+        with pe2:
+            st.caption(
+                "**Zone guide** — Low: metro/plains · Medium: coastal/semi-arid · "
+                "High: flood-prone/cyclone belt · Extreme: high-altitude or delta region."
+            )
+
     st.markdown("")
     btn_col, _ = st.columns([1, 2])
     with btn_col:
         if st.button("Analyse my startup →", type="primary", use_container_width=True):
+            # Map physical_assets → hardware_software_split and facility_climate_risk_zone.
+            # Take the higher-risk value between the user's explicit advanced input and
+            # what the asset list implies — never silently downgrade.
+            _zone_rank = {"Low": 0, "Medium": 1, "High": 2, "Extreme": 3}
+            _rank_zone = {0: "Low", 1: "Medium", 2: "High", 3: "Extreme"}
+            _pa_hw_boost = 0.0
+            _pa_zone_floor = 0
+            for _asset in physical_assets:
+                if _asset == "Warehouse / fulfilment centre":
+                    _pa_hw_boost = max(_pa_hw_boost, 0.30)
+                    _pa_zone_floor = max(_pa_zone_floor, 1)   # at least Medium
+                elif _asset == "Vehicles / delivery fleet":
+                    _pa_hw_boost = max(_pa_hw_boost, 0.20)
+                    _pa_zone_floor = max(_pa_zone_floor, 1)
+                elif _asset == "Lab / R&D equipment":
+                    _pa_hw_boost = max(_pa_hw_boost, 0.25)
+                elif _asset == "Kitchen / food processing":
+                    _pa_hw_boost = max(_pa_hw_boost, 0.20)
+                    _pa_zone_floor = max(_pa_zone_floor, 1)
+                elif _asset == "Office / coworking space":
+                    _pa_hw_boost = max(_pa_hw_boost, 0.05)
+                # "None — fully cloud" → no boost
+            _effective_hw_split = min(1.0, max(hardware_software_split, _pa_hw_boost))
+            _effective_climate_zone = _rank_zone[
+                max(_zone_rank[facility_climate_risk_zone], _pa_zone_floor)
+            ]
+
             st.session_state["profile"] = {
                 "startup_name": startup_name,
                 "sector": sector,
+                "sub_sector": sub_sector,
                 "funding_stage": funding_stage,
                 "team_size": team_size,
                 "operations": operations,
@@ -1145,6 +1334,28 @@ if not st.session_state.get("show_results"):
                 "physical_assets": physical_assets,
                 "has_investors": has_investors,
                 "biggest_fear": biggest_fear,
+                # advanced fields
+                "investor_cn_hk_pct": investor_cn_hk_pct,
+                "cumulative_fundraising_inr_cr": cumulative_fundraising_inr_cr,
+                "holdco_domicile": holdco_domicile,
+                "founder_concentration_index": founder_concentration_index,
+                "dpiit_recognition": dpiit_recognition,
+                "rbi_registration": rbi_registration,
+                "gig_headcount_pct": gig_headcount_pct,
+                "posh_ic_constituted": posh_ic_constituted,
+                "state_footprint": state_footprint,
+                "cert_in_poc_designated": cert_in_poc_designated,
+                "sdf_probability": sdf_probability,
+                "data_localisation_status": data_localisation_status,
+                "ai_in_product": ai_in_product,
+                "hardware_software_split": _effective_hw_split,
+                "b2b_pct": b2b_pct,
+                "export_eu_pct": export_eu_pct,
+                "export_us_pct": export_us_pct,
+                "export_china_pct": export_china_pct,
+                "chinese_supplier_pct_cogs": chinese_supplier_pct_cogs,
+                "listed_customer_brsr_dependency": listed_customer_brsr_dependency,
+                "facility_climate_risk_zone": _effective_climate_zone,
             }
             st.session_state["show_results"] = True
             st.session_state["_bundle_data"] = None
@@ -1176,8 +1387,37 @@ if st.button("← Edit profile"):
     st.session_state["_bundle_data"] = None
     st.rerun()
 
-scores = compute_risk_scores(sector, funding_stage, team_size, operations, data_sensitivity)
-recommendations = recommend_products(scores, sector, team_size, funding_stage)
+_inp = StartupInput(
+    sector=sector,
+    funding_stage=funding_stage,
+    team_size=team_size,
+    operations=operations,
+    data_sensitivity=data_sensitivity,
+    sub_sector=_p.get("sub_sector"),
+    export_eu_pct=_p.get("export_eu_pct", 0.0),
+    export_us_pct=_p.get("export_us_pct", 0.0),
+    export_china_pct=_p.get("export_china_pct", 0.0),
+    b2b_pct=_p.get("b2b_pct", 0.5),
+    gig_headcount_pct=_p.get("gig_headcount_pct", 0.0),
+    posh_ic_constituted=_p.get("posh_ic_constituted", False),
+    cert_in_poc_designated=_p.get("cert_in_poc_designated", False),
+    investor_cn_hk_pct=_p.get("investor_cn_hk_pct", 0.0),
+    cumulative_fundraising_inr_cr=_p.get("cumulative_fundraising_inr_cr", 0.0),
+    holdco_domicile=_p.get("holdco_domicile", "India"),
+    founder_concentration_index=_p.get("founder_concentration_index", 0.5),
+    sdf_probability=_p.get("sdf_probability", 0.0),
+    data_localisation_status=_p.get("data_localisation_status", "Unknown"),
+    ai_in_product=_p.get("ai_in_product", False),
+    hardware_software_split=_p.get("hardware_software_split", 0.0),
+    rbi_registration=_p.get("rbi_registration"),
+    dpiit_recognition=_p.get("dpiit_recognition", False),
+    state_footprint=_p.get("state_footprint", []),
+    chinese_supplier_pct_cogs=_p.get("chinese_supplier_pct_cogs", 0.0),
+    listed_customer_brsr_dependency=_p.get("listed_customer_brsr_dependency", False),
+    facility_climate_risk_zone=_p.get("facility_climate_risk_zone", "Low"),
+)
+scores = compute_risk_scores(_inp)
+recommendations = recommend_products(scores, sector, team_size, funding_stage, inp=_inp)
 
 # Profile strip
 st.markdown(f"## {SECTOR_PROFILES[sector]['emoji']} Profile: **{startup_name}**")
@@ -1192,7 +1432,7 @@ st.markdown("---")
 # Risk dashboard
 st.markdown(
     '<div class="section-heading">Your Risk Dashboard</div>'
-    '<div class="section-sub">Five-dimension exposure profile based on your inputs.</div>',
+    '<div class="section-sub">Thirteen-category exposure profile across digital, legal, operational, and macro risk dimensions.</div>',
     unsafe_allow_html=True,
 )
 dash_col1, dash_col2, dash_col3 = st.columns([1.1, 1.2, 0.9])
@@ -1201,7 +1441,7 @@ with dash_col1:
 with dash_col2:
     st.plotly_chart(render_risk_bars(scores), use_container_width=True)
 with dash_col3:
-    components.html(render_risk_scorecards(scores), height=340, scrolling=False)
+    components.html(render_risk_scorecards(scores), height=680, scrolling=True)
 
 # Verdict
 overall = sum(scores.values()) / len(scores)
@@ -1222,6 +1462,105 @@ st.markdown(
     f'</div>',
     unsafe_allow_html=True,
 )
+
+st.markdown("---")
+
+# ── Grouped risk breakdown (4 clusters) ─────────────────────────────────
+st.markdown(
+    '<div class="section-heading">Risk Breakdown by Category</div>'
+    '<div class="section-sub">Scores grouped across four risk themes — hover for values.</div>',
+    unsafe_allow_html=True,
+)
+for group_name, group_keys in RISK_DISPLAY_GROUPS.items():
+    group_scores = {k: scores[k] for k in group_keys if k in scores}
+    if not group_scores:
+        continue
+    max_score = max(group_scores.values())
+    if max_score >= 70:
+        g_color = "#AD1E23"
+    elif max_score >= 40:
+        g_color = "#D97706"
+    else:
+        g_color = "#059669"
+    cols = st.columns(len(group_scores))
+    st.markdown(
+        f'<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;'
+        f'text-transform:uppercase;color:{g_color};margin:-0.4rem 0 0.5rem 0;">'
+        f'{group_name}</div>',
+        unsafe_allow_html=True,
+    )
+    for col, (cat, val) in zip(cols, group_scores.items()):
+        col.metric(cat, f"{val:.0f}/100")
+
+# ── Risk Intelligence panel ──────────────────────────────────────────────
+st.markdown(
+    '<div class="section-heading" style="margin-top:1.25rem;">Risk Intelligence</div>'
+    '<div class="section-sub">Statistics and forecasts behind your scores — '
+    'only categories scoring 40+ are shown.</div>',
+    unsafe_allow_html=True,
+)
+
+_active_cats = [cat for cat, val in scores.items() if val >= 40]
+for cat in _active_cats:
+    stat_data = RISK_CATEGORY_STATS.get(cat, {})
+    cite_list = REGULATORY_CITATIONS.get(cat, [])
+    score_val = scores[cat]
+    if score_val >= 70:
+        badge_bg, badge_color = "#FEE2E2", "#991B1B"
+    else:
+        badge_bg, badge_color = "#FEF3C7", "#92400E"
+
+    with st.expander(f"{cat}  —  {score_val:.0f}/100"):
+        if stat_data:
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown(
+                    f'<div style="background:#F0F9FF;border-left:3px solid #0EA5E9;'
+                    f'border-radius:8px;padding:0.8rem 1rem;margin-bottom:0.6rem;">'
+                    f'<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
+                    f'text-transform:uppercase;color:#0369A1;margin-bottom:0.4rem;">Current scenario</div>'
+                    f'<p style="font-size:0.84rem;color:#0F172A;line-height:1.65;margin:0;">'
+                    f'{stat_data.get("headline","")}</p>'
+                    f'<div style="font-size:0.7rem;color:#64748B;margin-top:0.5rem;">'
+                    f'📎 {stat_data.get("source","")}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            with c2:
+                st.markdown(
+                    f'<div style="background:#F0FDF4;border-left:3px solid #22C55E;'
+                    f'border-radius:8px;padding:0.8rem 1rem;margin-bottom:0.6rem;">'
+                    f'<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
+                    f'text-transform:uppercase;color:#15803D;margin-bottom:0.4rem;">Forecast</div>'
+                    f'<p style="font-size:0.84rem;color:#0F172A;line-height:1.65;margin:0;">'
+                    f'{stat_data.get("forecast","")}</p>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+            sector_note = stat_data.get("sector_notes", {}).get(sector)
+            if sector_note:
+                st.markdown(
+                    f'<div style="background:{badge_bg};border-left:3px solid {badge_color};'
+                    f'border-radius:8px;padding:0.65rem 1rem;margin-bottom:0.6rem;">'
+                    f'<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
+                    f'text-transform:uppercase;color:{badge_color};margin-bottom:0.3rem;">'
+                    f'Why this matters for {sector}</div>'
+                    f'<p style="font-size:0.84rem;color:#0F172A;line-height:1.6;margin:0;">'
+                    f'{sector_note}</p>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+        if cite_list:
+            st.markdown(
+                '<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
+                'text-transform:uppercase;color:#94A3B8;margin:0.4rem 0 0.3rem 0;">'
+                'Statutes &amp; regulations</div>',
+                unsafe_allow_html=True,
+            )
+            for cite in cite_list:
+                st.markdown(f"- {cite}")
 
 st.markdown("---")
 
@@ -1384,13 +1723,26 @@ with st.expander("Founder's explainer — what each of these actually means", ex
 
 with st.expander("How we scored you — the logic behind the numbers"):
     st.markdown("""
-        We combine **six inputs** into **five risk dimensions**:
+        We combine **up to 25 inputs** into **13 risk dimensions** across four themes:
 
-        1. **Sector baseline** — each sector has a characteristic risk shape from 13 Indian startup categories.
-        2. **Funding stage** — later stages attract higher investor scrutiny, regulatory attention, and litigation exposure.
-        3. **Team size** — larger teams raise HR, key-person, and compliance risk.
-        4. **Operations type** — digital-only amplifies cyber risk; physical raises property/liability.
-        5. **Data sensitivity** — handling PII, health, or financial data pushes cyber and compliance scores up sharply under DPDP Act 2023.
+        **Digital & Data** — Cyber Technical, Data Privacy, IP Infringement
+        **Legal & Governance** — Liability, Governance & Fraud, Regulatory Compliance
+        **Operational** — Key Person, Property, Gig & Labour
+        **Macro & Emerging** — ESG & Climate, Geopolitical, Policy Velocity, Reputation
+
+        Key scoring inputs:
+        1. **Sector baseline** — each sector has a characteristic risk profile calibrated to Indian regulatory filings.
+        2. **Sub-sector overrides** — e.g. Fintech.NBFC_Digital_Lending forces compliance → 10 per RBI Digital Lending Directions 8-May-2025.
+        3. **Funding stage** — later stages attract higher investor scrutiny, D&O exposure, and Competition Act DVT risk.
+        4. **Team size** — larger teams raise key-person, gig labour, and compliance risk.
+        5. **Operations type** — digital-only amplifies cyber risk; physical raises property and liability.
+        6. **Data sensitivity** — High sensitivity pushes cyber and data privacy scores sharply (DPDPA ₹250cr penalty cap).
+        7. **SDF probability** — DPDPA §10 Significant Data Fiduciary designation further elevates data privacy scores.
+        8. **Gig headcount %** — Social Security Code §113-114 aggregator levy; state gig Acts (KA/RJ/BR/JH/TG).
+        9. **China/HK investor BO %** — DPIIT Press Note 3 government-route FDI exposure.
+        10. **EU revenue % (CBAM)** — Carbon Border Adjustment Mechanism from 1-Jan-2026 elevates ESG & climate scores.
+        11. **AI in product** — MeitY AI Advisory (Mar-2024) and SGI Rules (Feb-2026) elevate policy velocity and compliance.
+        12. **Climate risk zone** — IMD/NDMA hazard classification elevates property and ESG scores.
 
         Scores are normalised to 0–100. Products are matched from a pool of 28 insurance types using a weighted-risk mapping.
     """)
