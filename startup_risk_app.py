@@ -567,7 +567,7 @@ st.markdown(
 # Do NOT change _GEMINI_MODEL to flash, pro, or ultra variants — they are paid.
 # =============================================================================
 _GEMINI_MODEL = "gemini-2.5-flash-lite"   # cheapest available; do not upgrade
-_GEMINI_MAX_TOKENS = 2048                  # fits full JSON response; still within free tier
+_GEMINI_MAX_TOKENS = 4096                  # fits full JSON response; still within free tier
 
 _GENAI_AVAILABLE = False
 _GEMINI_CLIENT = None
@@ -1128,6 +1128,11 @@ if not st.session_state.get("show_results"):
                 "Payments / financial transactions",
                 "Health / medical records",
                 "Personal identity data (KYC / Aadhaar)",
+                "Employee / HR data (payroll, biometrics)",
+                "Minors' / children's data",
+                "Location / GPS tracking data",
+                "Intellectual property / source code",
+                "Customer behavioural / usage data",
                 "Physical inventory / goods",
                 "Sensitive personal data (DPDP Act)",
                 "None of the above",
@@ -1142,6 +1147,14 @@ if not st.session_state.get("show_results"):
                 "CDSCO / medical devices",
                 "DPDP Act obligations",
                 "DGCA / drone operations",
+                "IT Act / CERT-In obligations",
+                "Labour Codes / gig worker regulations",
+                "BIS / QCO product certification",
+                "NMC / telemedicine regulations",
+                "MV Act / transport regulations",
+                "SEBI BRSR / ESG reporting",
+                "Competition Act / CCI",
+                "EPR / environmental compliance",
                 "None / minimal",
             ],
         )
@@ -1151,9 +1164,16 @@ if not st.session_state.get("show_results"):
             [
                 "Office / coworking space",
                 "Warehouse / fulfilment centre",
+                "Manufacturing plant / factory",
                 "Lab / R&D equipment",
+                "Medical devices / diagnostic equipment",
                 "Vehicles / delivery fleet",
+                "Drones / UAV equipment",
                 "Kitchen / food processing",
+                "Cold chain / refrigeration",
+                "Solar / clean energy infrastructure",
+                "Retail stores / kiosks",
+                "Data centre / server room",
                 "None — fully cloud",
             ],
         )
@@ -1303,14 +1323,32 @@ if not st.session_state.get("show_results"):
                 if _asset == "Warehouse / fulfilment centre":
                     _pa_hw_boost = max(_pa_hw_boost, 0.30)
                     _pa_zone_floor = max(_pa_zone_floor, 1)   # at least Medium
+                elif _asset == "Manufacturing plant / factory":
+                    _pa_hw_boost = max(_pa_hw_boost, 0.60)
+                    _pa_zone_floor = max(_pa_zone_floor, 2)   # at least High
                 elif _asset == "Vehicles / delivery fleet":
                     _pa_hw_boost = max(_pa_hw_boost, 0.20)
                     _pa_zone_floor = max(_pa_zone_floor, 1)
                 elif _asset == "Lab / R&D equipment":
                     _pa_hw_boost = max(_pa_hw_boost, 0.25)
+                elif _asset == "Medical devices / diagnostic equipment":
+                    _pa_hw_boost = max(_pa_hw_boost, 0.35)
+                elif _asset == "Drones / UAV equipment":
+                    _pa_hw_boost = max(_pa_hw_boost, 0.20)
                 elif _asset == "Kitchen / food processing":
                     _pa_hw_boost = max(_pa_hw_boost, 0.20)
                     _pa_zone_floor = max(_pa_zone_floor, 1)
+                elif _asset == "Cold chain / refrigeration":
+                    _pa_hw_boost = max(_pa_hw_boost, 0.25)
+                    _pa_zone_floor = max(_pa_zone_floor, 1)
+                elif _asset == "Solar / clean energy infrastructure":
+                    _pa_hw_boost = max(_pa_hw_boost, 0.50)
+                    _pa_zone_floor = max(_pa_zone_floor, 1)
+                elif _asset == "Retail stores / kiosks":
+                    _pa_hw_boost = max(_pa_hw_boost, 0.10)
+                    _pa_zone_floor = max(_pa_zone_floor, 1)
+                elif _asset == "Data centre / server room":
+                    _pa_hw_boost = max(_pa_hw_boost, 0.15)
                 elif _asset == "Office / coworking space":
                     _pa_hw_boost = max(_pa_hw_boost, 0.05)
                 # "None — fully cloud" → no boost
@@ -1319,6 +1357,251 @@ if not st.session_state.get("show_results"):
                 max(_zone_rank[facility_climate_risk_zone], _pa_zone_floor)
             ]
 
+            # =================================================================
+            # DROPDOWN → SCORING WIRING REFERENCE
+            # =================================================================
+            # Every selection in the three "Tell Us More" dropdowns is wired
+            # into the numeric scoring engine. Nothing is text-only.
+            #
+            # ── HOW IT WORKS ─────────────────────────────────────────────────
+            # Two mechanisms are used, applied before scoring:
+            #   (A) FLOOR — raises an existing StartupInput field to a minimum
+            #       value implied by the selection, never downgrading an
+            #       explicit Advanced input the user already set.
+            #   (B) POST-SCORE BOOST — an additive point increase applied
+            #       directly to a risk category score after compute_risk_scores()
+            #       runs, for effects that have no matching StartupInput field.
+            #       Each boost is capped so the total never exceeds 100.
+            #
+            # ── DATA HANDLED → FLOORS ────────────────────────────────────────
+            # Selection                          | Field            | Floor
+            # -----------------------------------|------------------|-------
+            # Minors' / children's data          | sdf_probability  | 0.80
+            #   Basis: DPDPA §9 ₹200cr penalty for processing minor data
+            #   without verifiable parental consent; NCPCR active enforcement.
+            #
+            # Sensitive personal data (DPDP Act) | sdf_probability  | 0.75
+            #   Basis: DPDPA §2(t) explicit SPD list; ₹250cr max penalty tier.
+            #
+            # Health / medical records           | sdf_probability  | 0.70
+            #   Basis: Star Health breach Sept 2024 → 31M records leaked;
+            #   healthcare = 2nd most attacked sector (CERT-In 2025).
+            #
+            # Employee / HR data (biometrics)    | sdf_probability  | 0.65
+            #   Basis: Biometrics = DPDPA §2(t)(ii) explicit SPD; payroll
+            #   systems = top insider-threat target (CERT-In 2025).
+            #
+            # Payments / financial transactions  | sdf_probability  | 0.60
+            #   Basis: RBI FY24 card/internet fraud +334% YoY (29,082 cases);
+            #   ₹21,367cr fraud losses H1 FY24-25 (BioCatch/RBI 2025).
+            #
+            # Personal identity data (KYC/Aadhaar)| sdf_probability | 0.60
+            #   Basis: UIDAI data = DPDPA §2(t) SPD; KYC breaches
+            #   doubled FY24 (CERT-In Annual Report 2025).
+            #
+            # Location / GPS tracking data       | sdf_probability  | 0.40
+            #   Basis: DPDPA treats location data as personal data;
+            #   MoRTH Aggregator Guidelines 2025 mandate driver-location
+            #   data retention; enforcement expected post-DPDP Rules 2025.
+            #
+            # Customer behavioural / usage data  | sdf_probability  | 0.30
+            #   Basis: DPDPA consent requirement for profiling; MeitY AI
+            #   Advisory data processing rules Mar 2024.
+            #
+            # Intellectual property / source code| sdf_probability  | 0.20
+            #   Basis: IT Act §66B source code theft; trade secret
+            #   litigation rising (ANI v OpenAI Delhi HC 2024).
+            #
+            # Any sensitive type + Low sensitivity| data_sensitivity| → Medium
+            #   Basis: DPDPA mandates 72-hr breach notification regardless
+            #   of whether startup classifies its own data as low-risk.
+            #
+            # ── DATA HANDLED → POST-SCORE BOOSTS ────────────────────────────
+            # Selection                       | Category               | +pts
+            # -------------------------------|------------------------|------
+            # Health / medical records        | Cyber Technical Risk   |  +10
+            #                                 | Data Privacy Risk      |  +12
+            #   Basis: Star Health 31M records; IBM 2024 healthcare breach
+            #   avg ₹19.5cr in India; healthcare #2 attacked sector.
+            #
+            # Payments / financial            | Cyber Technical Risk   |   +8
+            #                                 | Governance & Fraud Risk|   +8
+            #   Basis: BFSI = #1 targeted sector; digital payment fraud
+            #   5x surge to ₹14.57B (BioCatch/RBI 2025).
+            #
+            # Minors' / children's data       | Data Privacy Risk      |  +15
+            #                                 | Regulatory Compliance  |  +12
+            #   Basis: DPDPA §9 ₹200cr penalty; NCPCR enforcement; POCSO §13.
+            #
+            # Employee / HR data              | Data Privacy Risk      |   +8
+            #                                 | Cyber Technical Risk   |   +5
+            #   Basis: Biometrics = §2(t)(ii) SPD; 72-hr breach notification.
+            #
+            # Intellectual property / code    | IP Infringement Risk   |  +12
+            #   Basis: ANI v OpenAI Delhi HC 2024; IT Act §66B; Patents Act.
+            #
+            # Location / GPS tracking data    | Data Privacy Risk      |   +6
+            #   Basis: DPDPA personal data; MoRTH Aggregator Guidelines 2025.
+            #
+            # ── REGULATORY → FLOORS ──────────────────────────────────────────
+            # Selection                        | Field                | Floor
+            # ---------------------------------|----------------------|-------
+            # IT Act / CERT-In obligations     | cert_in_poc          | True
+            #   Basis: CERT-In Directions 28-Apr-2022; 128 orgs designated
+            #   PoC in 2024; 6-hr mandatory breach reporting.
+            #
+            # Labour Codes / gig worker regs   | gig_headcount_pct    | 0.25
+            #   Basis: SS Code 2020 §§113-114 aggregator levy; four Labour
+            #   Codes effective 21-Nov-2025; KA/RJ/BR/JH/TG state Acts.
+            #
+            # MV Act / transport regulations   | gig_headcount_pct    | 0.20
+            #   Basis: MV Aggregator Guidelines 2025 → ₹5L health + ₹10L
+            #   term per driver; §149 unlimited third-party liability.
+            #
+            # BIS / QCO product certification  | hardware_sw_split    | 0.30
+            #   Basis: 200+ QCOs issued 2023-24; BIS Act 2016 criminal
+            #   prosecution for non-compliance.
+            #
+            # DGCA / drone operations          | hardware_sw_split    | 0.20
+            #   Basis: DGCA Drone Rules 2021; UAS Rules 2021; mandatory
+            #   insurance for all commercial drone operations.
+            #
+            # SEBI BRSR / ESG reporting        | listed_customer_brsr | True
+            #   Basis: SEBI BRSR Core + Value-Chain Circular 28-Mar-2025
+            #   extends ESG obligations to supplier startups of listed cos.
+            #
+            # ── REGULATORY → POST-SCORE BOOSTS ──────────────────────────────
+            # Selection                       | Category               | +pts
+            # -------------------------------|------------------------|------
+            # RBI / SEBI / IRDAI licensed     | Regulatory Compliance  |  +15
+            #                                 | Governance & Fraud Risk|  +10
+            #   Basis: 8+ RBI circulars 2024; Paytm PB Sec 35A halt
+            #   31-Jan-2024; SEBI enforcement penalties ₹1,000cr+ in 2024.
+            #
+            # FSSAI / food safety             | Regulatory Compliance  |  +12
+            #                                 | Reputation Risk        |  +10
+            #   Basis: 18,000+ FSSAI enforcement actions 2024 (+20% YoY);
+            #   MDH/Everest banned HK/SG 2024; FSSAI trust at historic low.
+            #
+            # CDSCO / medical devices         | Regulatory Compliance  |  +15
+            #                                 | Liability Risk         |  +12
+            #   Basis: CDSCO SaMD Guidance 21-Oct-2025; Class B/C/D
+            #   mandatory; 5.2M medical negligence cases/year (MJ 2024).
+            #
+            # NMC / telemedicine regulations  | Regulatory Compliance  |  +12
+            #                                 | Liability Risk         |  +10
+            #   Basis: NMC Telemedicine Guidelines 2020 + 2025 Amendment;
+            #   80% of negligence deaths from procedural errors (MJ 2024).
+            #
+            # EPR / environmental compliance  | ESG & Climate Risk     |  +12
+            #                                 | Regulatory Compliance  |   +8
+            #   Basis: Battery Waste Mgmt Rules 2022; PWM Amendment 2024;
+            #   EPR obligations phased through FY2028; CPCB ₹1L+ penalty.
+            #
+            # Competition Act / CCI           | Governance & Fraud Risk|  +10
+            #                                 | Regulatory Compliance  |   +8
+            #   Basis: Competition (Amendment) Act 2023; DVT ₹2,000cr live
+            #   10-Sep-2024; CCI penalties up to 10% of global turnover.
+            #
+            # DGCA / drone operations         | Liability Risk         |  +10
+            #                                 | Regulatory Compliance  |   +8
+            #   Basis: DGCA Drone Rules 2021; one crash in populated area
+            #   = unlimited third-party liability under MV Act §149.
+            #
+            # ── PHYSICAL ASSETS → FLOORS ─────────────────────────────────────
+            # Selection                        | hw_split floor | zone floor
+            # ---------------------------------|----------------|----------
+            # Manufacturing plant / factory    |      0.60      |   High
+            # Solar / clean energy infra       |      0.50      |   Medium
+            # Lab / R&D equipment              |      0.25      |   —
+            # Medical devices / diagnostic     |      0.35      |   —
+            # Cold chain / refrigeration       |      0.25      |   Medium
+            # Warehouse / fulfilment centre    |      0.30      |   Medium
+            # Drones / UAV equipment           |      0.20      |   —
+            # Vehicles / delivery fleet        |      0.20      |   Medium
+            # Kitchen / food processing        |      0.20      |   Medium
+            # Data centre / server room        |      0.15      |   —
+            # Retail stores / kiosks           |      0.10      |   Medium
+            # Office / coworking space         |      0.05      |   —
+            # None — fully cloud               |      —         |   —
+            # =================================================================
+
+            # ── data_handled → sdf_probability floor ──────────────────────────
+            # Each type of sensitive data implies a minimum likelihood of DPDPA
+            # Significant Data Fiduciary designation (§10). We floor sdf_probability
+            # at the implied minimum without ever downgrading an explicit advanced input.
+            # Sources: DPDPA 2023; DPDP Rules G.S.R. 846(E) 13-Nov-2025; IBM Cost of
+            # Data Breach India 2024 (₹19.5cr avg); CERT-In Annual Report 2025.
+            _sdf_floor_map = {
+                # Minors' data: §9 imposes ₹200cr penalty — highest DPDPA exposure
+                "Minors' / children's data":                   0.80,
+                # Explicit DPDPA §2(t) Sensitive Personal Data list
+                "Sensitive personal data (DPDP Act)":          0.75,
+                # Biometrics = §2(t)(ii) SPD; payroll data = top insider-threat target
+                "Employee / HR data (payroll, biometrics)":    0.65,
+                # Star Health Sept 2024: 31M records; healthcare #2 attacked sector
+                "Health / medical records":                    0.70,
+                # UIDAI data = §2(t) SPD; KYC breaches doubled FY24 (CERT-In 2025)
+                "Personal identity data (KYC / Aadhaar)":      0.60,
+                # RBI FY24: card/internet fraud +334% YoY; ₹21,367cr losses H1 FY24-25
+                "Payments / financial transactions":            0.60,
+                # DPDPA §2(t) covers location when linked to individual; MoRTH 2025
+                "Location / GPS tracking data":                0.40,
+                # DPDPA consent required for profiling; MeitY AI Advisory data rules
+                "Customer behavioural / usage data":           0.30,
+                # Source code / IP not an SDF trigger but elevates data sensitivity
+                "Intellectual property / source code":         0.20,
+            }
+            _effective_sdf = sdf_probability
+            _sensitive_high_types = {
+                "Health / medical records", "Payments / financial transactions",
+                "Personal identity data (KYC / Aadhaar)",
+                "Employee / HR data (payroll, biometrics)",
+                "Minors' / children's data", "Sensitive personal data (DPDP Act)",
+            }
+            for _dh in data_handled:
+                _effective_sdf = max(_effective_sdf, _sdf_floor_map.get(_dh, 0.0))
+            # If user selected sensitive data types but left data_sensitivity at Low,
+            # floor it to Medium — DPDPA mandates 72-hr breach notification regardless
+            _effective_data_sensitivity = data_sensitivity
+            if set(data_handled) & _sensitive_high_types and data_sensitivity == "Low":
+                _effective_data_sensitivity = "Medium"
+
+            # ── regulatory → floor existing StartupInput fields ───────────────
+            # Selecting a regulatory obligation implies minimum exposure even if the
+            # user didn't fill in the matching advanced slider. Never downgrade explicit
+            # advanced inputs — only apply a floor.
+            # Sources: CERT-In Directions 28-Apr-2022; SS Code 2020 §§113-114;
+            # MV Aggregator Guidelines Jul-2025; BIS Act 2016; SEBI BRSR Mar-2025.
+            _effective_gig = gig_headcount_pct
+            _effective_cert_in = cert_in_poc_designated
+            _effective_brsr = listed_customer_brsr_dependency
+            for _reg in regulatory:
+                if _reg == "IT Act / CERT-In obligations":
+                    # CERT-In 2022 directions: 128 orgs designated PoC in 2024;
+                    # 6-hr mandatory breach reporting; 180-day log retention
+                    _effective_cert_in = True
+                elif _reg == "Labour Codes / gig worker regulations":
+                    # SS Code §§113-114 aggregator levy; four Labour Codes 21-Nov-2025;
+                    # Karnataka/Rajasthan/Bihar/Jharkhand/Telangana state Acts
+                    _effective_gig = max(_effective_gig, 0.25)
+                elif _reg == "MV Act / transport regulations":
+                    # MV Aggregator Guidelines 2025: ₹5L health + ₹10L term per driver;
+                    # §149 unlimited third-party liability
+                    _effective_gig = max(_effective_gig, 0.20)
+                elif _reg == "BIS / QCO product certification":
+                    # BIS QCO violations = criminal prosecution under BIS Act 2016;
+                    # 200+ QCOs issued 2023-24; hardware split floor implies physical goods
+                    _effective_hw_split = max(_effective_hw_split, 0.30)
+                elif _reg == "DGCA / drone operations":
+                    # DGCA Drone Rules 2021; UAS Rules 2021; mandatory insurance for
+                    # all commercial drone operations
+                    _effective_hw_split = max(_effective_hw_split, 0.20)
+                elif _reg == "SEBI BRSR / ESG reporting":
+                    # SEBI BRSR Core + Value-Chain Circular 28-Mar-2025 extends ESG
+                    # obligations to supplier startups of listed cos
+                    _effective_brsr = True
+
             st.session_state["profile"] = {
                 "startup_name": startup_name,
                 "sector": sector,
@@ -1326,7 +1609,7 @@ if not st.session_state.get("show_results"):
                 "funding_stage": funding_stage,
                 "team_size": team_size,
                 "operations": operations,
-                "data_sensitivity": data_sensitivity,
+                "data_sensitivity": _effective_data_sensitivity,
                 "product_description": product_description,
                 "customer_type": customer_type,
                 "data_handled": data_handled,
@@ -1341,11 +1624,11 @@ if not st.session_state.get("show_results"):
                 "founder_concentration_index": founder_concentration_index,
                 "dpiit_recognition": dpiit_recognition,
                 "rbi_registration": rbi_registration,
-                "gig_headcount_pct": gig_headcount_pct,
+                "gig_headcount_pct": _effective_gig,
                 "posh_ic_constituted": posh_ic_constituted,
                 "state_footprint": state_footprint,
-                "cert_in_poc_designated": cert_in_poc_designated,
-                "sdf_probability": sdf_probability,
+                "cert_in_poc_designated": _effective_cert_in,
+                "sdf_probability": _effective_sdf,
                 "data_localisation_status": data_localisation_status,
                 "ai_in_product": ai_in_product,
                 "hardware_software_split": _effective_hw_split,
@@ -1354,7 +1637,7 @@ if not st.session_state.get("show_results"):
                 "export_us_pct": export_us_pct,
                 "export_china_pct": export_china_pct,
                 "chinese_supplier_pct_cogs": chinese_supplier_pct_cogs,
-                "listed_customer_brsr_dependency": listed_customer_brsr_dependency,
+                "listed_customer_brsr_dependency": _effective_brsr,
                 "facility_climate_risk_zone": _effective_climate_zone,
             }
             st.session_state["show_results"] = True
@@ -1417,6 +1700,84 @@ _inp = StartupInput(
     facility_climate_risk_zone=_p.get("facility_climate_risk_zone", "Low"),
 )
 scores = compute_risk_scores(_inp)
+
+# ── Post-score boosts from data_handled and regulatory dropdowns ──────────────
+# These are additive (not multiplicative) to avoid double-counting with the
+# StartupInput fields already wired above. Each boost is capped at 100.
+# Statistical backing is cited inline.
+_boosts: dict = {}
+
+for _dh in data_handled:
+    if _dh == "Health / medical records":
+        # Star Health Sept 2024: 31M records; healthcare = 2nd most attacked sector
+        # (CERT-In 2025); IBM 2024: healthcare breach avg ₹19.5cr in India
+        _boosts["Cyber Technical Risk"]  = max(_boosts.get("Cyber Technical Risk", 0), 10)
+        _boosts["Data Privacy Risk"]     = max(_boosts.get("Data Privacy Risk", 0), 12)
+    elif _dh == "Payments / financial transactions":
+        # BFSI = #1 targeted sector India; card/internet fraud +334% FY24 (29,082 cases)
+        # Digital payment fraud 5x surge to ₹14.57B (BioCatch/RBI 2025)
+        _boosts["Cyber Technical Risk"]    = max(_boosts.get("Cyber Technical Risk", 0), 8)
+        _boosts["Governance & Fraud Risk"] = max(_boosts.get("Governance & Fraud Risk", 0), 8)
+    elif _dh == "Minors' / children's data":
+        # DPDPA §9: ₹200cr penalty for processing minor data without verifiable
+        # parental consent; NCPCR active enforcement; strictest DPDPA category
+        _boosts["Data Privacy Risk"]           = max(_boosts.get("Data Privacy Risk", 0), 15)
+        _boosts["Regulatory Compliance Risk"]  = max(_boosts.get("Regulatory Compliance Risk", 0), 12)
+    elif _dh == "Employee / HR data (payroll, biometrics)":
+        # Biometrics = DPDPA §2(t)(ii) explicit SPD; payroll = top insider-threat
+        # target per CERT-In 2025; 72-hr breach notification mandatory
+        _boosts["Data Privacy Risk"]     = max(_boosts.get("Data Privacy Risk", 0), 8)
+        _boosts["Cyber Technical Risk"]  = max(_boosts.get("Cyber Technical Risk", 0), 5)
+    elif _dh == "Intellectual property / source code":
+        # ANI v OpenAI Delhi HC 2024 — first landmark AI training copyright case;
+        # IT Act §66B source code theft; trade secret litigation rising
+        _boosts["IP Infringement Risk"]  = max(_boosts.get("IP Infringement Risk", 0), 12)
+    elif _dh == "Location / GPS tracking data":
+        # DPDPA treats location data as personal data; MoRTH Aggregator Guidelines
+        # 2025 mandate driver-location data retention; enforcement expected post-DPDP Rules
+        _boosts["Data Privacy Risk"]     = max(_boosts.get("Data Privacy Risk", 0), 6)
+
+for _reg in regulatory:
+    if _reg == "RBI / SEBI / IRDAI licensed":
+        # 8+ RBI circulars 2024; Paytm PB Sec 35A halt 31-Jan-2024; SEBI enforcement
+        # penalties ₹1,000cr+ in 2024; IRDAI Bima Sugam regs 20-Mar-2024
+        _boosts["Regulatory Compliance Risk"] = max(_boosts.get("Regulatory Compliance Risk", 0), 15)
+        _boosts["Governance & Fraud Risk"]    = max(_boosts.get("Governance & Fraud Risk", 0), 10)
+    elif _reg == "FSSAI / food safety":
+        # 18,000+ FSSAI enforcement actions 2024 (+20% YoY); AI-based FoSCoS expanding;
+        # MDH/Everest banned HK/SG 2024; FSSAI consumer trust at historic low Apr 2024
+        _boosts["Regulatory Compliance Risk"] = max(_boosts.get("Regulatory Compliance Risk", 0), 12)
+        _boosts["Reputation Risk"]            = max(_boosts.get("Reputation Risk", 0), 10)
+    elif _reg == "CDSCO / medical devices":
+        # CDSCO SaMD Draft Guidance 21-Oct-2025; Class B/C/D mandatory classification;
+        # non-compliance = criminal prosecution under Drugs & Cosmetics Act; 5.2M
+        # medical negligence cases/year in India (Medical Journal 2024)
+        _boosts["Regulatory Compliance Risk"] = max(_boosts.get("Regulatory Compliance Risk", 0), 15)
+        _boosts["Liability Risk"]             = max(_boosts.get("Liability Risk", 0), 12)
+    elif _reg == "NMC / telemedicine regulations":
+        # NMC Telemedicine Guidelines 2020 + 2025 Amendment; cross-prescription liability;
+        # 80% of negligence-related deaths from procedural errors (Medical Journal 2024)
+        _boosts["Regulatory Compliance Risk"] = max(_boosts.get("Regulatory Compliance Risk", 0), 12)
+        _boosts["Liability Risk"]             = max(_boosts.get("Liability Risk", 0), 10)
+    elif _reg == "EPR / environmental compliance":
+        # Battery Waste Management Rules 2022 GSR 1030(E); PWM Amendment Rules 2024;
+        # EPR obligations phased through FY2028; CPCB penalties ₹1L+ per incident
+        _boosts["ESG & Climate Risk"]         = max(_boosts.get("ESG & Climate Risk", 0), 12)
+        _boosts["Regulatory Compliance Risk"] = max(_boosts.get("Regulatory Compliance Risk", 0), 8)
+    elif _reg == "Competition Act / CCI":
+        # Competition (Amendment) Act 2023; DVT ₹2,000cr live 10-Sep-2024;
+        # CCI penalties up to 10% of average global turnover; merger filing mandatory
+        _boosts["Governance & Fraud Risk"]    = max(_boosts.get("Governance & Fraud Risk", 0), 10)
+        _boosts["Regulatory Compliance Risk"] = max(_boosts.get("Regulatory Compliance Risk", 0), 8)
+    elif _reg == "DGCA / drone operations":
+        # DGCA Drone Rules 2021; UAS Rules 2021; mandatory insurance for all commercial
+        # drone ops; one crash in populated area = unlimited third-party liability (MV Act §149)
+        _boosts["Liability Risk"]             = max(_boosts.get("Liability Risk", 0), 10)
+        _boosts["Regulatory Compliance Risk"] = max(_boosts.get("Regulatory Compliance Risk", 0), 8)
+
+for _cat, _delta in _boosts.items():
+    scores[_cat] = min(100.0, scores[_cat] + _delta)
+
 recommendations = recommend_products(scores, sector, team_size, funding_stage, inp=_inp)
 
 # Profile strip
