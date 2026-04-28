@@ -19,6 +19,7 @@ import plotly.graph_objects as go
 import pandas as pd
 from risk_engine import (
     SECTOR_PROFILES,
+    SUB_SECTOR_OPTIONS,
     SUB_SECTOR_PROFILES,
     PRODUCT_CATALOG,
     REGULATORY_CITATIONS,
@@ -37,35 +38,6 @@ RISK_DISPLAY_GROUPS = {
     "Legal & Governance": ["Liability Risk", "Governance & Fraud Risk", "Regulatory Compliance Risk"],
     "Operational": ["Key Person Risk", "Property Risk", "Gig & Labour Risk"],
     "Macro & Emerging": ["ESG & Climate Risk", "Geopolitical Risk", "Policy Velocity Risk", "Reputation Risk"],
-}
-
-# Sub-sector options keyed by sector name
-SUB_SECTOR_OPTIONS = {
-    "Fintech": [
-        "Fintech.NBFC_Digital_Lending", "Fintech.PA_PG", "Fintech.PA_Cross_Border",
-        "Fintech.WealthTech_EOP", "Fintech.Neobank_PPI", "Fintech.InsurTech",
-        "Fintech.Account_Aggregator",
-    ],
-    "Healthtech": [
-        "Healthtech.Telemedicine", "Healthtech.Diagnostics",
-        "Healthtech.PharmaTech_ePharmacy", "Healthtech.MedDevice_SaMD",
-        "Healthtech.Clinical_Trials_SaaS",
-    ],
-    "Gaming / Media / Content": [
-        "Gaming.Real_Money", "Gaming.Casual_Esports", "Gaming.OTT", "Gaming.Creator_Economy",
-    ],
-    "Logistics / Mobility": [
-        "Logistics.Last_Mile_Delivery", "Logistics.B2B_Freight", "Logistics.EV_OEM",
-    ],
-    "D2C / Consumer Brands": [
-        "D2C.Hardware_Electronics", "D2C.Food_Beverage", "D2C.Apparel_Footwear",
-    ],
-    "Deeptech / AI / Robotics": [
-        "Deeptech.AI_Software", "Deeptech.Hardware_Robotics",
-    ],
-    "Edtech": [
-        "Edtech.K12_Children", "Edtech.Test_Prep_Adult",
-    ],
 }
 
 # =============================================================================
@@ -1050,7 +1022,7 @@ if not st.session_state.get("show_results"):
                               help="Pick the sector that describes most of your revenue.")
     with fc3:
         funding_stage = st.selectbox("Funding stage",
-                                     ["Pre-seed", "Seed", "Series A", "Series B+"])
+                                     ["Pre-seed", "Seed", "Series A", "Series B+", "Series C", "Pre-IPO / Listed"])
 
     st.caption(f"{SECTOR_PROFILES[sector]['emoji']}  {SECTOR_PROFILES[sector]['description']}")
 
@@ -1101,10 +1073,10 @@ if not st.session_state.get("show_results"):
     fa, fb = st.columns([1.3, 1])
     with fa:
         product_description = st.text_area(
-            "What does your product / service do?",
+            "Product context (optional, not scored)",
             placeholder="e.g. We build a UPI payment gateway for SMBs, processing 10k+ txns/day…",
             height=110,
-            help="Be specific — what you build, who it's for, how it works.",
+            help="Optional underwriter context. Numeric scoring uses the sector and sub-sector dropdowns.",
         )
     with fb:
         customer_type = st.multiselect(
@@ -1179,9 +1151,11 @@ if not st.session_state.get("show_results"):
         )
 
     biggest_fear = st.text_area(
-        "Biggest fear for your startup? (optional)",
+        "Underwriter note: biggest concern (optional, not scored)",
         placeholder="e.g. A data breach that kills customer trust, or a product recall that goes viral…",
         height=80,
+        max_chars=280,
+        help="Stored as a note for the underwriter packet only. It is not used in numeric scoring.",
     )
 
     st.markdown("---")
@@ -1208,7 +1182,10 @@ if not st.session_state.get("show_results"):
         with gc2:
             holdco_domicile = st.selectbox(
                 "Holdco domicile",
-                ["India", "DE", "SG", "Cayman", "Flip_pending"],
+                [
+                    "India_or_GIFT", "Mauritius_Netherlands", "Singapore", "DE_or_US",
+                    "Cayman_BVI", "Flip_pending", "Land_border_BO_>10%",
+                ],
                 help="Where your ultimate parent entity is incorporated.",
             )
             founder_concentration_index = st.slider(
@@ -1232,10 +1209,13 @@ if not st.session_state.get("show_results"):
                 help="% of total headcount that are gig workers or contractors. "
                      "Triggers Social Security Code §113-114 aggregator levy.",
             ) / 100
-            posh_ic_constituted = st.checkbox(
-                "POSH Act Internal Committee constituted", value=False,
-                help="POSH Act 2013 §4 — mandatory once you have 10+ employees.",
-            )
+            if team_size >= 10:
+                posh_ic_constituted = st.checkbox(
+                    "POSH Act Internal Committee constituted", value=False,
+                    help="POSH Act 2013 §4 — mandatory once you have 10+ employees.",
+                )
+            else:
+                posh_ic_constituted = False
         with wf2:
             state_footprint = st.multiselect(
                 "States with significant operations",
@@ -1262,10 +1242,12 @@ if not st.session_state.get("show_results"):
                 help="Where customer data is stored and processed.",
             )
         with da2:
-            ai_in_product = st.checkbox(
-                "AI / ML in core product", value=False,
-                help="Triggers MeitY AI Advisory (15-Mar-2024) and SGI Rules (10-Feb-2026) compliance obligations.",
+            ai_tier = st.selectbox(
+                "AI / ML in core product",
+                ["None", "Embedded", "Applied", "Foundational"],
+                help="EU AI Act taxonomy proxy: Embedded < Applied < Foundational.",
             )
+            ai_in_product = ai_tier != "None"
             hardware_software_split = st.slider(
                 "Hardware revenue %", 0, 100, 0,
                 help="% of revenue from physical hardware or manufactured products (BIS QCO, BEE compliance).",
@@ -1289,10 +1271,10 @@ if not st.session_state.get("show_results"):
                 "Chinese supplier % of COGS", 0, 100, 0,
                 help="Supply-chain PN3 / geopolitical exposure.",
             ) / 100
-            listed_customer_brsr_dependency = st.checkbox(
-                "Listed customers requiring BRSR value-chain data", value=False,
+            listed_customer_brsr_dependency = st.slider(
+                "Top-1000 listed customer revenue %", 0, 100, 0,
                 help="SEBI BRSR Core Circular (28-Mar-2025) pushes ESG obligations to supplier startups.",
-            )
+            ) / 100
 
     with st.expander("Physical & Environmental"):
         pe1, pe2 = st.columns(2)
@@ -1575,7 +1557,7 @@ if not st.session_state.get("show_results"):
             # MV Aggregator Guidelines Jul-2025; BIS Act 2016; SEBI BRSR Mar-2025.
             _effective_gig = gig_headcount_pct
             _effective_cert_in = cert_in_poc_designated
-            _effective_brsr = listed_customer_brsr_dependency
+            _effective_brsr_pct = listed_customer_brsr_dependency
             for _reg in regulatory:
                 if _reg == "IT Act / CERT-In obligations":
                     # CERT-In 2022 directions: 128 orgs designated PoC in 2024;
@@ -1600,7 +1582,7 @@ if not st.session_state.get("show_results"):
                 elif _reg == "SEBI BRSR / ESG reporting":
                     # SEBI BRSR Core + Value-Chain Circular 28-Mar-2025 extends ESG
                     # obligations to supplier startups of listed cos
-                    _effective_brsr = True
+                    _effective_brsr_pct = max(_effective_brsr_pct, 0.40)
 
             st.session_state["profile"] = {
                 "startup_name": startup_name,
@@ -1616,6 +1598,7 @@ if not st.session_state.get("show_results"):
                 "regulatory": regulatory,
                 "physical_assets": physical_assets,
                 "has_investors": has_investors,
+                "institutional_investors_on_board": has_investors == "Yes",
                 "biggest_fear": biggest_fear,
                 # advanced fields
                 "investor_cn_hk_pct": investor_cn_hk_pct,
@@ -1631,13 +1614,15 @@ if not st.session_state.get("show_results"):
                 "sdf_probability": _effective_sdf,
                 "data_localisation_status": data_localisation_status,
                 "ai_in_product": ai_in_product,
+                "ai_tier": ai_tier,
                 "hardware_software_split": _effective_hw_split,
                 "b2b_pct": b2b_pct,
                 "export_eu_pct": export_eu_pct,
                 "export_us_pct": export_us_pct,
                 "export_china_pct": export_china_pct,
                 "chinese_supplier_pct_cogs": chinese_supplier_pct_cogs,
-                "listed_customer_brsr_dependency": _effective_brsr,
+                "listed_customer_brsr_dependency": _effective_brsr_pct > 0,
+                "top1000_listed_customer_rev_pct": _effective_brsr_pct,
                 "facility_climate_risk_zone": _effective_climate_zone,
             }
             st.session_state["show_results"] = True
@@ -1684,6 +1669,7 @@ _inp = StartupInput(
     gig_headcount_pct=_p.get("gig_headcount_pct", 0.0),
     posh_ic_constituted=_p.get("posh_ic_constituted", False),
     cert_in_poc_designated=_p.get("cert_in_poc_designated", False),
+    institutional_investors_on_board=_p.get("institutional_investors_on_board", False),
     investor_cn_hk_pct=_p.get("investor_cn_hk_pct", 0.0),
     cumulative_fundraising_inr_cr=_p.get("cumulative_fundraising_inr_cr", 0.0),
     holdco_domicile=_p.get("holdco_domicile", "India"),
@@ -1691,12 +1677,14 @@ _inp = StartupInput(
     sdf_probability=_p.get("sdf_probability", 0.0),
     data_localisation_status=_p.get("data_localisation_status", "Unknown"),
     ai_in_product=_p.get("ai_in_product", False),
+    ai_tier=_p.get("ai_tier", "Applied" if _p.get("ai_in_product", False) else "None"),
     hardware_software_split=_p.get("hardware_software_split", 0.0),
     rbi_registration=_p.get("rbi_registration"),
     dpiit_recognition=_p.get("dpiit_recognition", False),
     state_footprint=_p.get("state_footprint", []),
     chinese_supplier_pct_cogs=_p.get("chinese_supplier_pct_cogs", 0.0),
     listed_customer_brsr_dependency=_p.get("listed_customer_brsr_dependency", False),
+    top1000_listed_customer_rev_pct=_p.get("top1000_listed_customer_rev_pct", 0.0),
     facility_climate_risk_zone=_p.get("facility_climate_risk_zone", "Low"),
 )
 scores = compute_risk_scores(_inp)

@@ -10,6 +10,7 @@ REGULATORY_CITATIONS dict for explainability.
 import math
 import decimal
 import warnings
+from datetime import date
 from dataclasses import dataclass, field
 from typing import Optional, List
 
@@ -21,7 +22,7 @@ from typing import Optional, List
 class StartupInput:
     # ── EXISTING (preserved) ──────────────────────────────────────────────────
     sector: str
-    funding_stage: str                      # "Pre-seed" | "Seed" | "Series A" | "Series B+"
+    funding_stage: str                      # "Pre-seed" | "Seed" | "Series A" | "Series B+" | "Series C" | "Pre-IPO / Listed"
     team_size: int
     operations: str                         # "Digital-only" | "Physical-only" | "Hybrid"
     data_sensitivity: str                   # "Low" | "Medium" | "High"
@@ -39,18 +40,25 @@ class StartupInput:
     gig_headcount_pct: float = 0.0          # gig/contractor % of total workforce
     posh_ic_constituted: bool = False       # POSH Act 2013 §4 IC formed?
     cert_in_poc_designated: bool = False    # CERT-In 2022 POC designated?
+    institutional_investors_on_board: bool = False
 
     # ── NEW: Capital & governance ─────────────────────────────────────────────
     investor_cn_hk_pct: float = 0.0         # BO % from China/HK — PN3 flag
     cumulative_fundraising_inr_cr: float = 0.0  # DVT ₹2,000cr Competition Act flag
     holdco_domicile: str = "India"          # "India" | "DE" | "SG" | "Cayman" | "Flip_pending"
     founder_concentration_index: float = 0.5    # (founder_equity_pct) × (1 − indep_director_pct)
+    founder_controversy_flag: bool = False
 
     # ── NEW: Data & product ───────────────────────────────────────────────────
     sdf_probability: float = 0.0            # 0-1; DPDPA §10 SDF designation likelihood
     data_localisation_status: str = "Unknown"  # "Full_onshore"|"Hybrid"|"Offshore"|"Unknown"
     ai_in_product: bool = False             # MeitY AI Advisory + SGI Rules trigger
+    ai_tier: str = "None"                   # "None"|"Embedded"|"Applied"|"Foundational"
     hardware_software_split: float = 0.0    # % of revenue from physical hardware/product
+    india_dc_dependency: bool = False
+    bom_intersects_bis_qco_769_list: bool = False
+    hs_basket: Optional[str] = None
+    downstream_metals_post_2028: bool = False
 
     # ── NEW: Regulatory registration ─────────────────────────────────────────
     rbi_registration: Optional[str] = None  # "NBFC"|"PA"|"PPI"|"RIA"|"AA"|None
@@ -60,9 +68,16 @@ class StartupInput:
     state_footprint: List[str] = field(default_factory=list)
     chinese_supplier_pct_cogs: float = 0.0
     listed_customer_brsr_dependency: bool = False  # SEBI BRSR value-chain push-through
+    top1000_listed_customer_rev_pct: float = 0.0
 
     # ── NEW: Environment ──────────────────────────────────────────────────────
     facility_climate_risk_zone: str = "Low"     # "Low"|"Medium"|"High"|"Extreme"
+    facility_in_isro_landslide_tier1: bool = False
+    facility_in_ndma_flood_tier1: bool = False
+
+    # Sector routing flags
+    real_money_gaming_flag: bool = False
+    crypto_vda_flag: bool = False
 
 
 # =============================================================================
@@ -212,6 +227,74 @@ SECTOR_PROFILES = {
         "emoji": "🍔",
         "description": "FSSAI per-location, MV Aggregator 2025, gig Acts, food-safety reputation risk.",
     },
+}
+
+
+BASE_WEIGHT_KEYS = (
+    "cyber_technical", "data_privacy_regulatory", "liability", "ip_infringement",
+    "key_person", "governance_fraud", "property", "compliance", "esg_climate",
+    "geopolitical", "gig_labour", "policy_velocity", "reputation", "tax_tp",
+)
+
+CORRECTED_BASE_WEIGHTS = {
+    "SaaS / Enterprise Software": (8.5, 8.0, 4, 8, 7, 5, 2.0, 5, 2.0, 5, 3, 4, 4, 7),
+    "Fintech": (9.0, 9.5, 9, 6, 8.5, 8.5, 2.5, 9.5, 2.5, 5.5, 4, 9, 9, 7),
+    "Healthtech": (9.5, 9.5, 9, 8, 8, 6.5, 6.5, 8, 5.5, 8.5, 6, 6, 8, 5),
+    "D2C / Consumer Brands": (8.0, 8.0, 8, 7, 6.5, 6.5, 5.5, 7, 5.5, 5.0, 8, 6, 9, 6),
+    "Deeptech / AI / Robotics": (7.5, 6.5, 6, 9, 9.5, 5, 4.0, 6, 4.0, 6, 3, 9, 6, 8),
+    "Edtech": (8.0, 9.0, 7, 6, 8, 8, 4.5, 7, 2.5, 3, 5, 7, 9, 7),
+    "Agritech": (6.0, 5.5, 6, 6, 7, 6, 7.0, 6, 8.0, 4, 5, 5, 5, 4),
+    "Cleantech / Climatetech": (6.0, 5.5, 7, 8, 6.5, 5.5, 9.0, 7, 9.5, 9.5, 4, 6, 8, 6),
+    "Logistics / Mobility": (7.5, 7.0, 9, 4, 6, 5.5, 9.5, 8, 8.5, 8, 10, 8, 8, 5),
+    "Legaltech": (7.0, 7.5, 5, 5, 7, 5, 3.0, 6, 3.0, 3, 4, 5, 5, 5),
+    "HRtech": (7.5, 7.5, 5, 5, 6, 5, 3.0, 6, 3.0, 3, 6, 5, 6, 5),
+    "Gaming / Media / Content": (8.5, 8.5, 7, 9, 8, 9, 3.0, 9.5, 2.5, 4.5, 6, 10, 10, 7),
+    "Foodtech / Cloud Kitchen": (7.0, 6.5, 8, 5, 9.0, 6.5, 8.5, 8, 8.0, 4.5, 10, 8, 8, 4),
+    "Crypto/VDA": (9, 9, 7, 6, 8, 9.5, 2.0, 9.5, 3.0, 7, 3, 10, 9, 9.5),
+}
+
+
+def _apply_corrected_base_weights() -> None:
+    for sector, values in CORRECTED_BASE_WEIGHTS.items():
+        profile = SECTOR_PROFILES.setdefault(
+            sector,
+            {
+                "emoji": "C",
+                "description": "Virtual digital assets, exchange/custody, AML, tax, policy and market-conduct exposure.",
+            },
+        )
+        profile.update(dict(zip(BASE_WEIGHT_KEYS, values)))
+
+
+_apply_corrected_base_weights()
+
+
+SUB_SECTOR_OPTIONS = {
+    "Fintech": [
+        "Fintech.NBFC_Digital_Lending", "Fintech.PA_PG", "Fintech.PA_Cross_Border",
+        "Fintech.WealthTech_EOP", "Fintech.Neobank_PPI", "Fintech.InsurTech",
+        "Fintech.Account_Aggregator",
+    ],
+    "Healthtech": [
+        "Healthtech.Telemedicine", "Healthtech.Diagnostics",
+        "Healthtech.PharmaTech_ePharmacy", "Healthtech.MedDevice_SaMD",
+        "Healthtech.Clinical_Trials_SaaS",
+    ],
+    "Gaming / Media / Content": [
+        "Gaming.Real_Money", "Gaming.Casual_Esports", "Gaming.OTT", "Gaming.Creator_Economy",
+    ],
+    "Logistics / Mobility": [
+        "Logistics.Last_Mile_Delivery", "Logistics.B2B_Freight", "Logistics.EV_OEM",
+    ],
+    "D2C / Consumer Brands": [
+        "D2C.Hardware_Electronics", "D2C.Food_Beverage", "D2C.Apparel_Footwear",
+    ],
+    "Deeptech / AI / Robotics": [
+        "Deeptech.AI_Software", "Deeptech.Hardware_Robotics",
+    ],
+    "Edtech": [
+        "Edtech.K12_Children", "Edtech.Test_Prep_Adult",
+    ],
 }
 
 
@@ -1300,31 +1383,219 @@ REGULATORY_CITATIONS = {
 # =============================================================================
 # RISK SCORING ENGINE — v2 (13 categories, StartupInput dataclass)
 # =============================================================================
+DPDP_PHASE_3_LIVE_DATE = date(2027, 5, 14)
+
+STAGE_ALIASES = {
+    "Pre-seed": "Pre-seed",
+    "Seed": "Seed",
+    "Series A": "Series_A",
+    "Series_A": "Series_A",
+    "Series B": "Series_B",
+    "Series_B": "Series_B",
+    "Series B+": "Series_B",
+    "Series C": "Series_C",
+    "Series_C": "Series_C",
+    "Pre-IPO / Listed": "Pre_IPO_or_Listed",
+    "Pre IPO / Listed": "Pre_IPO_or_Listed",
+    "Pre_IPO_or_Listed": "Pre_IPO_or_Listed",
+}
+
+DEFAULT_STAGE_MULT = {
+    "Pre-seed": 0.55,
+    "Seed": 0.80,
+    "Series_A": 1.10,
+    "Series_B": 1.40,
+    "Series_C": 1.50,
+    "Pre_IPO_or_Listed": 1.50,
+}
+
+LIABILITY_STAGE_MULT = {
+    "Pre-seed": 0.60,
+    "Seed": 0.80,
+    "Series_A": 1.00,
+    "Series_B": 1.30,
+    "Series_C": 1.60,
+    "Pre_IPO_or_Listed": 2.00,
+}
+
+GOV_STAGE_MULT = {
+    "Pre-seed": 0.85,
+    "Seed": 0.90,
+    "Series_A": 1.10,
+    "Series_B": 1.35,
+    "Series_C": 1.45,
+    "Pre_IPO_or_Listed": 1.45,
+}
+
+POLICY_STAGE_MULT = {
+    "Pre-seed": 1.10,
+    "Seed": 1.00,
+    "Series_A": 0.95,
+    "Series_B": 1.00,
+    "Series_C": 1.05,
+    "Pre_IPO_or_Listed": 1.15,
+}
+
+GIG_ACTIVE_STATES_TIER1 = {"Rajasthan", "Karnataka", "Telangana", "Bihar", "Jharkhand"}
+GIG_ACTIVE_STATES_OTHER = {"Maharashtra", "Delhi", "Tamil Nadu", "Gujarat"}
+CBAM_COVERED_HS = {"steel", "aluminum", "cement", "fertilizer", "hydrogen", "electricity"}
+MAX_CUMULATIVE_ADJ_MULT = 3.5
+
+
+@dataclass(frozen=True)
+class ScoringAdjusters:
+    # Audit report: holdco routing changes tax leakage, FEMA/OI reporting and PN3 geopolitical review load.
+    holdco_adj: float = 1.0
+    # POSH Act 2013 Section 4: IC required for employers with 10+ workers.
+    posh_adj: float = 1.0
+    # CERT-In Directions 28-Apr-2022: 6-hour incident reporting and PoC/log-retention obligations.
+    cert_in_adj: float = 1.0
+    # Investor diligence: institutional investors reduce governance/key-person opacity but increase formal compliance expectations.
+    inst_inv_adj: float = 1.10
+    # RBI localisation precedent and DPDPA storage/control exposure.
+    loc_adj: float = 1.10
+    # DPIIT recognition changes tax/IP/compliance support eligibility.
+    dpiit_adj: float = 1.05
+
+    def multiplier_for(self, category: str) -> float:
+        multiplier = 1.0
+        if category in {"tax_tp", "compliance", "geopolitical"}:
+            multiplier *= self.holdco_adj
+        if category in {"reputation", "liability", "compliance"}:
+            multiplier *= self.posh_adj
+        if category in {"cyber_technical", "compliance"}:
+            multiplier *= self.cert_in_adj
+        if category in {"governance_fraud", "compliance", "key_person"}:
+            multiplier *= self.inst_inv_adj
+        if category in {"data_privacy_regulatory", "compliance", "geopolitical"}:
+            multiplier *= self.loc_adj
+        if category in {"tax_tp", "compliance", "ip_infringement"}:
+            multiplier *= self.dpiit_adj
+        return multiplier
+
+
+def normalize_funding_stage(stage: str) -> str:
+    if stage not in STAGE_ALIASES:
+        raise ValueError(f"Unknown funding stage: {stage!r}")
+    return STAGE_ALIASES[stage]
+
+
+def resolve_scoring_sector(inp: StartupInput) -> str:
+    if inp.crypto_vda_flag or inp.sector == "Crypto/VDA":
+        return "Crypto/VDA"
+    return inp.sector
+
+
+def any_other_gig_law_state(op_states: List[str]) -> bool:
+    return bool(set(op_states or []) & GIG_ACTIVE_STATES_OTHER)
+
+
+def normalize_holdco_domicile(value: str) -> str:
+    aliases = {
+        "India": "India_or_GIFT",
+        "GIFT": "India_or_GIFT",
+        "SG": "Singapore",
+        "DE": "DE_or_US",
+        "US": "DE_or_US",
+        "Cayman": "Cayman_BVI",
+        "BVI": "Cayman_BVI",
+    }
+    return aliases.get(value, value or "India_or_GIFT")
+
+
+def bool_to_yn_unknown(value: Optional[bool]) -> str:
+    if value is True:
+        return "Y"
+    if value is False:
+        return "N"
+    return "Unknown"
+
+
+def build_scoring_adjusters(inp: StartupInput) -> ScoringAdjusters:
+    holdco_adj_map = {
+        "India_or_GIFT": 1.00,
+        "Mauritius_Netherlands": 1.05,
+        "Singapore": 1.10,
+        "DE_or_US": 1.15,
+        "Cayman_BVI": 1.25,
+        "Flip_pending": 1.20,
+        "Land_border_BO_>10%": 1.30,
+    }
+    holdco_key = normalize_holdco_domicile(inp.holdco_domicile)
+    if holdco_key not in holdco_adj_map:
+        raise ValueError(f"Unknown holdco_domicile: {inp.holdco_domicile!r}")
+    holdco_adj = holdco_adj_map[holdco_key]
+
+    if inp.team_size >= 10:
+        posh_adj = {"Y": 0.90, "N": 1.40, "Unknown": 1.25}[bool_to_yn_unknown(inp.posh_ic_constituted)]
+    else:
+        posh_adj = 1.0
+
+    cert_in_adj = {"Y": 0.95, "N": 1.15, "Unknown": 1.10}[bool_to_yn_unknown(inp.cert_in_poc_designated)]
+    inst_inv_adj = 0.95 if inp.institutional_investors_on_board else 1.10
+    loc_adj = {
+        "Full_onshore": 0.85,
+        "Hybrid": 1.00,
+        "Offshore": 1.25,
+        "Unknown": 1.10,
+    }[inp.data_localisation_status]
+    dpiit_adj = 0.92 if inp.dpiit_recognition else 1.05
+
+    return ScoringAdjusters(
+        holdco_adj=holdco_adj,
+        posh_adj=posh_adj,
+        cert_in_adj=cert_in_adj,
+        inst_inv_adj=inst_inv_adj,
+        loc_adj=loc_adj,
+        dpiit_adj=dpiit_adj,
+    )
+
+
+def is_dno_stage(stage: str) -> bool:
+    return normalize_funding_stage(stage) in {"Series_A", "Series_B", "Series_C", "Pre_IPO_or_Listed"}
+
+
+def data_multiplier_for(inp: StartupInput, as_of: Optional[date] = None) -> dict:
+    as_of = as_of or date.today()
+    high_compliance = 1.4 if as_of >= DPDP_PHASE_3_LIVE_DATE else 1.3
+    values = {
+        "Low": {"cyber_technical": 0.7, "data_privacy_regulatory": 0.6, "compliance": 0.8},
+        "Medium": {"cyber_technical": 1.0, "data_privacy_regulatory": 1.0, "compliance": 1.0},
+        "High": {"cyber_technical": 1.4, "data_privacy_regulatory": 1.5, "compliance": high_compliance},
+        "High_stacked": {"cyber_technical": 1.5, "data_privacy_regulatory": 1.6, "compliance": 1.4},
+    }
+    if inp.data_sensitivity not in values:
+        raise ValueError(f"Unknown data_sensitivity: {inp.data_sensitivity!r}")
+    return values[inp.data_sensitivity]
+
+
 def compute_risk_scores(inp: StartupInput) -> dict:
     """
     13-category risk engine. Accepts StartupInput dataclass.
     Returns dict of 13 risk category scores (0-100).
     """
     # ── Input validation ──────────────────────────────────────────────────────
-    if inp.sector not in SECTOR_PROFILES:
-        raise ValueError(f"Unknown sector: {inp.sector!r}")
+    sector = resolve_scoring_sector(inp)
+    stage_key = normalize_funding_stage(inp.funding_stage)
+    real_money_gaming = inp.real_money_gaming_flag or inp.sub_sector == "RMG"
+
+    if sector not in SECTOR_PROFILES:
+        raise ValueError(f"Unknown sector: {sector!r}")
     if inp.sub_sector and inp.sub_sector in SUB_SECTOR_PROFILES:
-        if SUB_SECTOR_PROFILES[inp.sub_sector].get("_hard_decline"):
+        if SUB_SECTOR_PROFILES[inp.sub_sector].get("_hard_decline") and not real_money_gaming:
             raise ValueError(
                 f"Hard decline: {inp.sub_sector} — "
                 f"{SUB_SECTOR_PROFILES[inp.sub_sector].get('_reason', 'Regulatory prohibition')}"
             )
-    if inp.funding_stage not in ("Pre-seed", "Seed", "Series A", "Series B+"):
-        raise ValueError(f"Unknown funding stage: {inp.funding_stage!r}")
     if not isinstance(inp.team_size, int) or inp.team_size < 1:
         raise ValueError(f"team_size must be positive int, got {inp.team_size!r}")
     if inp.operations not in ("Digital-only", "Physical-only", "Hybrid"):
         raise ValueError(f"Unknown operations: {inp.operations!r}")
-    if inp.data_sensitivity not in ("Low", "Medium", "High"):
-        raise ValueError(f"Unknown data_sensitivity: {inp.data_sensitivity!r}")
+    data_mult = data_multiplier_for(inp)
+    scoring_adjusters = build_scoring_adjusters(inp)
 
     # ── Base weights: mutable copy of sector profile ──────────────────────────
-    base = dict(SECTOR_PROFILES[inp.sector])
+    base = dict(SECTOR_PROFILES[sector])
 
     # ── Sub-sector overrides (absolute values, not deltas) ────────────────────
     if inp.sub_sector and inp.sub_sector in SUB_SECTOR_PROFILES:
@@ -1333,128 +1604,176 @@ def compute_risk_scores(inp: StartupInput) -> dict:
                 base[k] = min(10, v)
 
     # ── Stage multipliers (category-specific) ─────────────────────────────────
-    default_stage_mult = {
-        "Pre-seed": 0.70, "Seed": 0.90, "Series A": 1.10, "Series B+": 1.30,
-    }[inp.funding_stage]
-
-    # governance_fraud: U-shaped (high at pre-seed & B+, dips at Seed/A)
-    gov_stage_mult = {
-        "Pre-seed": 0.90, "Seed": 0.85, "Series A": 1.00, "Series B+": 1.30,
-    }[inp.funding_stage]
-
-    # policy_velocity: inverse (mature companies have lobbying/legal buffers)
-    policy_stage_mult = {
-        "Pre-seed": 1.10, "Seed": 1.00, "Series A": 0.95, "Series B+": 1.00,
-    }[inp.funding_stage]
+    default_stage_mult = DEFAULT_STAGE_MULT[stage_key]
+    liability_stage_mult = LIABILITY_STAGE_MULT[stage_key]
+    gov_stage_mult = GOV_STAGE_MULT[stage_key]
+    policy_stage_mult = POLICY_STAGE_MULT[stage_key]
 
     # ── Team-size multipliers ─────────────────────────────────────────────────
-    if inp.team_size <= 5:      team_mult = 0.8;   kp_mult = 1.5
-    elif inp.team_size <= 10:   team_mult = 1.0;   kp_mult = 1.4
-    elif inp.team_size <= 20:   team_mult = 1.0;   kp_mult = 1.2
-    elif inp.team_size <= 50:   team_mult = 1.15;  kp_mult = 1.0
-    elif inp.team_size <= 150:  team_mult = 1.30;  kp_mult = 0.85
-    else:                       team_mult = 1.50;  kp_mult = 0.7
+    if inp.team_size <= 5:      team_mult = 0.75;  kp_mult = 1.40
+    elif inp.team_size <= 10:   team_mult = 1.05;  kp_mult = 1.30
+    elif inp.team_size <= 20:   team_mult = 1.10;  kp_mult = 1.25
+    elif inp.team_size <= 50:   team_mult = 1.20;  kp_mult = 1.00
+    elif inp.team_size <= 150:  team_mult = 1.35;  kp_mult = 0.90
+    else:                       team_mult = 1.55;  kp_mult = 0.80
 
     # ── Operations multipliers ────────────────────────────────────────────────
+    digital_property_mult = 0.5 if inp.india_dc_dependency else 0.4
     ops_mult = {
-        "Digital-only":  {"property": 0.4, "liability": 0.8, "cyber_technical": 1.2, "gig_labour": 0.6},
-        "Physical-only": {"property": 1.4, "liability": 1.2, "cyber_technical": 0.7, "gig_labour": 1.3},
-        "Hybrid":        {"property": 1.0, "liability": 1.0, "cyber_technical": 1.0, "gig_labour": 1.0},
+        "Digital-only": {"property": digital_property_mult, "liability": 0.9, "cyber_technical": 1.35, "gig_labour": 0.6},
+        "Physical-only": {"property": 1.4, "liability": 1.25, "cyber_technical": 0.7, "gig_labour": 1.35},
+        "Hybrid": {"property": 1.0, "liability": 1.0, "cyber_technical": 1.0, "gig_labour": 1.0},
     }[inp.operations]
 
     # ── Data sensitivity multipliers ──────────────────────────────────────────
-    data_mult = {
-        "Low":    {"cyber_technical": 0.6, "data_privacy_regulatory": 0.5, "compliance": 0.8},
-        "Medium": {"cyber_technical": 1.0, "data_privacy_regulatory": 1.0, "compliance": 1.0},
-        "High":   {"cyber_technical": 1.4, "data_privacy_regulatory": 1.5, "compliance": 1.3},
-    }[inp.data_sensitivity]
-
     # ── Dynamic adjusters from new inputs ─────────────────────────────────────
     # SDF probability → elevates data_privacy_regulatory (DPDPA §33 ₹250cr)
-    sdf_adj = 1.0 + (inp.sdf_probability * 0.5)
+    sdf_adj = 1.0 + (inp.sdf_probability * 0.7)
 
     # PN3 / Chinese investor + supply chain → geopolitical elevation
-    geo_adj = 1.0 + (inp.investor_cn_hk_pct * 0.8) + (inp.chinese_supplier_pct_cogs * 0.4)
+    cn_hk_pct = inp.investor_cn_hk_pct
+    if cn_hk_pct > 0.50:
+        cn_coef = 1.2
+    elif cn_hk_pct >= 0.10:
+        cn_coef = 0.8
+    else:
+        cn_coef = 0.3
+    supplier_coef_by_sector = {
+        "Cleantech / Climatetech": 0.4,
+        "Healthtech": 0.6,
+        "D2C.Hardware_Electronics": 0.5,
+        "Drones_Defence": 0.8,
+        "_default": 0.4,
+    }
+    sup_coef = supplier_coef_by_sector.get(inp.sub_sector, supplier_coef_by_sector.get(sector, 0.4))
+    geo_adj = (
+        1.0
+        + (cn_hk_pct * cn_coef)
+        + (inp.chinese_supplier_pct_cogs * sup_coef)
+        + (inp.export_us_pct * 0.20)
+    )
 
     # Gig headcount → gig_labour elevation
-    gig_adj = 1.0 + (inp.gig_headcount_pct * 1.2)
-
-    # Gig Acts in state footprint (KA/RJ/BR/JH/TG most aggressive)
-    gig_state_risk = {"Karnataka", "Rajasthan", "Bihar", "Jharkhand", "Telangana"}
-    if set(inp.state_footprint) & gig_state_risk and inp.gig_headcount_pct > 0.1:
-        gig_adj = min(gig_adj * 1.25, 2.0)
+    if set(inp.state_footprint or []) & GIG_ACTIVE_STATES_TIER1:
+        state_weight = 1.5
+    elif any_other_gig_law_state(inp.state_footprint):
+        state_weight = 1.2
+    else:
+        state_weight = 1.0
+    gig_adj = min(2.5, 1.0 + (inp.gig_headcount_pct * 1.4) * state_weight)
 
     # Hardware split → property + compliance (BIS QCO, BEE)
-    hw_adj = 1.0 + (inp.hardware_software_split * 0.6)
+    qco_factor = 0.8 if inp.bom_intersects_bis_qco_769_list else 0.5
+    hw_adj = 1.0 + (inp.hardware_software_split * qco_factor)
 
     # Export to EU → esg_climate + geopolitical (CBAM)
-    cbam_adj = 1.0 + (inp.export_eu_pct * 1.5)
+    hs_basket = (inp.hs_basket or "").strip().lower()
+    if hs_basket in CBAM_COVERED_HS:
+        cbam_coef = 2.0
+    elif inp.downstream_metals_post_2028:
+        cbam_coef = 1.3
+    else:
+        cbam_coef = 0.0
+    cbam_adj = 1.0 + (inp.export_eu_pct * cbam_coef)
 
     # AI in product → policy_velocity + compliance (MeitY + EU AI Act)
-    ai_adj = 1.3 if inp.ai_in_product else 1.0
+    ai_tier = inp.ai_tier
+    if inp.ai_in_product and ai_tier == "None":
+        ai_tier = "Applied"
+    if ai_tier not in {"None", "Embedded", "Applied", "Foundational"}:
+        raise ValueError(f"Unknown ai_tier: {inp.ai_tier!r}")
+    ai_adj = {"None": 1.0, "Embedded": 1.15, "Applied": 1.3, "Foundational": 1.5}[ai_tier]
 
     # Governance: founder concentration + fundraising scale
     gov_adj = (
         1.0
-        + (inp.founder_concentration_index * 0.5)
+        + (inp.founder_concentration_index * 0.55)
         + (0.3 if inp.cumulative_fundraising_inr_cr > 2000 else 0.0)
+        + (0.5 if inp.cumulative_fundraising_inr_cr > 5000 else 0.0)
     )
 
     # BRSR push-through: elevates esg_climate
-    brsr_adj = 1.2 if inp.listed_customer_brsr_dependency else 1.0
+    brsr_pct = inp.top1000_listed_customer_rev_pct
+    if inp.listed_customer_brsr_dependency and brsr_pct <= 0:
+        brsr_pct = 0.4
+    brsr_adj = min(1.5, 1.0 + (brsr_pct * 0.5))
 
     # Climate risk zone: elevates esg_climate + property
-    climate_adj = {"Low": 1.0, "Medium": 1.2, "High": 1.5, "Extreme": 1.8}.get(
+    base_climate = {"Low": 1.0, "Medium": 1.2, "High": 1.5, "Extreme": 1.8}.get(
         inp.facility_climate_risk_zone, 1.0
     )
+    if inp.facility_in_isro_landslide_tier1 or inp.facility_in_ndma_flood_tier1:
+        base_climate = max(base_climate, 2.0)
+    climate_adj = base_climate
 
     # B2B split: elevates liability (PI contractual exposure)
-    b2b_adj = 1.0 + (inp.b2b_pct * 0.4)
+    b2b_adj = 1.0 + (inp.b2b_pct * 0.5)
 
     # ── Score computation ─────────────────────────────────────────────────────
-    def to_100(x: float) -> float:
-        d = decimal.Decimal(str(x * 7.5)).quantize(
+    final_score_multiplier = 1.5 if real_money_gaming else 1.0
+
+    def to_100(base_key: str, x: float) -> float:
+        adjusted = x * scoring_adjusters.multiplier_for(base_key) * final_score_multiplier
+        capped = min(adjusted, base[base_key] * MAX_CUMULATIVE_ADJ_MULT)
+        d = decimal.Decimal(str(capped * 7.5)).quantize(
             decimal.Decimal("0.1"), rounding=decimal.ROUND_HALF_UP
         )
         return float(max(decimal.Decimal("0"), min(decimal.Decimal("100"), d)))
 
-    team_liability_factor = 0.85 + 0.08 * math.log1p(inp.team_size / 10)
+    team_liability_factor = (
+        0.85
+        + 0.08 * math.log1p(inp.team_size / 10)
+        + (0.15 if inp.founder_controversy_flag else 0)
+    )
 
     return {
         "Cyber Technical Risk": to_100(
+            "cyber_technical",
             base["cyber_technical"]
             * default_stage_mult
+            * team_mult
             * ops_mult["cyber_technical"]
             * data_mult["cyber_technical"]
         ),
         "Data Privacy Risk": to_100(
+            "data_privacy_regulatory",
             base["data_privacy_regulatory"]
             * default_stage_mult
+            * team_mult
             * data_mult["data_privacy_regulatory"]
             * sdf_adj
         ),
         "Liability Risk": to_100(
+            "liability",
             base["liability"]
-            * default_stage_mult
+            * liability_stage_mult
+            * team_mult
             * ops_mult["liability"]
             * team_liability_factor
             * b2b_adj
         ),
         "IP Infringement Risk": to_100(
+            "ip_infringement",
             base["ip_infringement"]
             * default_stage_mult
+            * team_mult
         ),
         "Key Person Risk": to_100(
+            "key_person",
             base["key_person"]
+            * team_mult
             * kp_mult
             * default_stage_mult
         ),
         "Governance & Fraud Risk": to_100(
+            "governance_fraud",
             base["governance_fraud"]
             * gov_stage_mult
+            * team_mult
             * gov_adj
         ),
         "Property Risk": to_100(
+            "property",
             base["property"]
             * ops_mult["property"]
             * team_mult
@@ -1462,35 +1781,47 @@ def compute_risk_scores(inp: StartupInput) -> dict:
             * climate_adj
         ),
         "Regulatory Compliance Risk": to_100(
+            "compliance",
             base["compliance"]
             * default_stage_mult
+            * team_mult
             * data_mult["compliance"]
             * ai_adj
         ),
         "ESG & Climate Risk": to_100(
+            "esg_climate",
             base["esg_climate"]
+            * team_mult
             * cbam_adj
             * brsr_adj
             * climate_adj
         ),
         "Geopolitical Risk": to_100(
+            "geopolitical",
             base["geopolitical"]
+            * team_mult
             * geo_adj
         ),
         "Gig & Labour Risk": to_100(
+            "gig_labour",
             base.get("gig_labour", 3)
+            * team_mult
             * gig_adj
             * ops_mult["gig_labour"]
             * default_stage_mult
         ),
         "Policy Velocity Risk": to_100(
+            "policy_velocity",
             base.get("policy_velocity", 5)
+            * team_mult
             * policy_stage_mult
             * ai_adj
         ),
         "Reputation Risk": to_100(
+            "reputation",
             base.get("reputation", 5)
             * default_stage_mult
+            * team_mult
             * team_liability_factor
         ),
     }
@@ -1593,7 +1924,7 @@ def recommend_products(risk_scores: dict, sector: str, team_size: int,
         ]
 
     # D&O boost: stage-aware AND compliance-aware
-    if funding_stage in ("Series A", "Series B+"):
+    if is_dno_stage(funding_stage):
         compliance_factor = 1.0 + (risk_scores["Regulatory Compliance Risk"] / 200.0)
         scored = [
             (k, _proportional_boost(s, pct=0.45 * compliance_factor, floor=55.0))
@@ -1716,7 +2047,7 @@ def recommend_products(risk_scores: dict, sector: str, team_size: int,
         if key not in top5_keys:
             append_mandatory(key)
 
-    if funding_stage in ("Series A", "Series B+") and "dno_liability" not in top5_keys:
+    if is_dno_stage(funding_stage) and "dno_liability" not in top5_keys:
         append_mandatory("dno_liability")
 
     # ── New mandatory triggers (require append_mandatory to be defined) ───────
@@ -1739,6 +2070,259 @@ def recommend_products(risk_scores: dict, sector: str, team_size: int,
     append_mandatory("employee_health", fallback_score=40.0)
 
     return results
+
+
+def derive_physical_risk_inputs(
+    physical_assets: Optional[List[str]],
+    hardware_software_split: float = 0.0,
+    facility_climate_risk_zone: str = "Low",
+) -> tuple[float, str]:
+    """Derive hardware and climate floors from selected physical assets."""
+    zone_rank = {"Low": 0, "Medium": 1, "High": 2, "Extreme": 3}
+    rank_zone = {0: "Low", 1: "Medium", 2: "High", 3: "Extreme"}
+    hw_boost = 0.0
+    zone_floor = 0
+
+    for asset in physical_assets or []:
+        if asset == "Warehouse / fulfilment centre":
+            hw_boost = max(hw_boost, 0.30)
+            zone_floor = max(zone_floor, 1)
+        elif asset == "Manufacturing plant / factory":
+            hw_boost = max(hw_boost, 0.60)
+            zone_floor = max(zone_floor, 2)
+        elif asset == "Vehicles / delivery fleet":
+            hw_boost = max(hw_boost, 0.20)
+            zone_floor = max(zone_floor, 1)
+        elif asset == "Lab / R&D equipment":
+            hw_boost = max(hw_boost, 0.25)
+        elif asset == "Medical devices / diagnostic equipment":
+            hw_boost = max(hw_boost, 0.35)
+        elif asset == "Drones / UAV equipment":
+            hw_boost = max(hw_boost, 0.20)
+        elif asset == "Kitchen / food processing":
+            hw_boost = max(hw_boost, 0.20)
+            zone_floor = max(zone_floor, 1)
+        elif asset == "Cold chain / refrigeration":
+            hw_boost = max(hw_boost, 0.25)
+            zone_floor = max(zone_floor, 1)
+        elif asset == "Solar / clean energy infrastructure":
+            hw_boost = max(hw_boost, 0.50)
+            zone_floor = max(zone_floor, 1)
+        elif asset == "Retail stores / kiosks":
+            hw_boost = max(hw_boost, 0.10)
+            zone_floor = max(zone_floor, 1)
+        elif asset == "Data centre / server room":
+            hw_boost = max(hw_boost, 0.15)
+        elif asset == "Office / coworking space":
+            hw_boost = max(hw_boost, 0.05)
+
+    effective_hw_split = min(1.0, max(float(hardware_software_split or 0.0), hw_boost))
+    current_rank = zone_rank.get(facility_climate_risk_zone, 0)
+    effective_zone = rank_zone[max(current_rank, zone_floor)]
+    return effective_hw_split, effective_zone
+
+
+def _effective_profile_values(profile: dict) -> dict:
+    data_handled = profile.get("data_handled", []) or []
+    regulatory = profile.get("regulatory", []) or []
+    physical_assets = profile.get("physical_assets", []) or []
+
+    hardware_split, climate_zone = derive_physical_risk_inputs(
+        physical_assets,
+        profile.get("hardware_software_split", 0.0),
+        profile.get("facility_climate_risk_zone", "Low"),
+    )
+
+    sdf_floor_map = {
+        "Minors' / children's data": 0.80,
+        "Sensitive personal data (DPDP Act)": 0.75,
+        "Employee / HR data (payroll, biometrics)": 0.65,
+        "Health / medical records": 0.70,
+        "Personal identity data (KYC / Aadhaar)": 0.60,
+        "Payments / financial transactions": 0.60,
+        "Location / GPS tracking data": 0.40,
+        "Customer behavioural / usage data": 0.30,
+        "Intellectual property / source code": 0.20,
+    }
+    sensitive_high_types = {
+        "Health / medical records",
+        "Payments / financial transactions",
+        "Personal identity data (KYC / Aadhaar)",
+        "Employee / HR data (payroll, biometrics)",
+        "Minors' / children's data",
+        "Sensitive personal data (DPDP Act)",
+    }
+
+    effective_sdf = float(profile.get("sdf_probability", 0.0) or 0.0)
+    for item in data_handled:
+        effective_sdf = max(effective_sdf, sdf_floor_map.get(item, 0.0))
+
+    effective_data_sensitivity = profile.get("data_sensitivity", "Medium")
+    if set(data_handled) & sensitive_high_types and effective_data_sensitivity == "Low":
+        effective_data_sensitivity = "Medium"
+    high_stacked_types = {
+        "Health / medical records",
+        "Minors' / children's data",
+        "Employee / HR data (payroll, biometrics)",
+    }
+    if high_stacked_types.issubset(set(data_handled)):
+        effective_data_sensitivity = "High_stacked"
+
+    effective_gig = float(profile.get("gig_headcount_pct", 0.0) or 0.0)
+    effective_cert_in = bool(profile.get("cert_in_poc_designated", False))
+    effective_brsr = bool(profile.get("listed_customer_brsr_dependency", False))
+
+    for item in regulatory:
+        if item == "IT Act / CERT-In obligations":
+            effective_cert_in = True
+        elif item == "Labour Codes / gig worker regulations":
+            effective_gig = max(effective_gig, 0.25)
+        elif item == "MV Act / transport regulations":
+            effective_gig = max(effective_gig, 0.20)
+        elif item == "BIS / QCO product certification":
+            hardware_split = max(hardware_split, 0.30)
+        elif item == "DGCA / drone operations":
+            hardware_split = max(hardware_split, 0.20)
+        elif item == "SEBI BRSR / ESG reporting":
+            effective_brsr = True
+
+    return {
+        "data_sensitivity": effective_data_sensitivity,
+        "sdf_probability": effective_sdf,
+        "gig_headcount_pct": effective_gig,
+        "cert_in_poc_designated": effective_cert_in,
+        "hardware_software_split": hardware_split,
+        "listed_customer_brsr_dependency": effective_brsr,
+        "facility_climate_risk_zone": climate_zone,
+    }
+
+
+def _build_startup_input(profile: dict) -> StartupInput:
+    effective = _effective_profile_values(profile)
+    return StartupInput(
+        sector=profile["sector"],
+        funding_stage=profile["funding_stage"],
+        team_size=int(profile["team_size"]),
+        operations=profile["operations"],
+        data_sensitivity=effective["data_sensitivity"],
+        sub_sector=profile.get("sub_sector"),
+        export_eu_pct=float(profile.get("export_eu_pct", 0.0) or 0.0),
+        export_us_pct=float(profile.get("export_us_pct", 0.0) or 0.0),
+        export_china_pct=float(profile.get("export_china_pct", 0.0) or 0.0),
+        b2b_pct=float(profile.get("b2b_pct", 0.5) or 0.5),
+        gig_headcount_pct=effective["gig_headcount_pct"],
+        posh_ic_constituted=bool(profile.get("posh_ic_constituted", False)),
+        cert_in_poc_designated=effective["cert_in_poc_designated"],
+        institutional_investors_on_board=bool(
+            profile.get("institutional_investors_on_board", False)
+            or profile.get("has_investors") == "Yes"
+        ),
+        investor_cn_hk_pct=float(profile.get("investor_cn_hk_pct", 0.0) or 0.0),
+        cumulative_fundraising_inr_cr=float(profile.get("cumulative_fundraising_inr_cr", 0.0) or 0.0),
+        holdco_domicile=profile.get("holdco_domicile", "India"),
+        founder_concentration_index=float(profile.get("founder_concentration_index", 0.5) or 0.5),
+        founder_controversy_flag=bool(profile.get("founder_controversy_flag", False)),
+        sdf_probability=effective["sdf_probability"],
+        data_localisation_status=profile.get("data_localisation_status", "Unknown"),
+        ai_in_product=bool(profile.get("ai_in_product", False)),
+        ai_tier=profile.get("ai_tier", "Applied" if profile.get("ai_in_product", False) else "None"),
+        hardware_software_split=effective["hardware_software_split"],
+        india_dc_dependency=bool(profile.get("india_dc_dependency", False)),
+        bom_intersects_bis_qco_769_list=bool(profile.get("bom_intersects_bis_qco_769_list", False)),
+        hs_basket=profile.get("hs_basket"),
+        downstream_metals_post_2028=bool(profile.get("downstream_metals_post_2028", False)),
+        rbi_registration=profile.get("rbi_registration"),
+        dpiit_recognition=bool(profile.get("dpiit_recognition", False)),
+        state_footprint=profile.get("state_footprint", []) or [],
+        chinese_supplier_pct_cogs=float(profile.get("chinese_supplier_pct_cogs", 0.0) or 0.0),
+        listed_customer_brsr_dependency=effective["listed_customer_brsr_dependency"],
+        top1000_listed_customer_rev_pct=float(profile.get("top1000_listed_customer_rev_pct", 0.0) or 0.0),
+        facility_climate_risk_zone=effective["facility_climate_risk_zone"],
+        facility_in_isro_landslide_tier1=bool(profile.get("facility_in_isro_landslide_tier1", False)),
+        facility_in_ndma_flood_tier1=bool(profile.get("facility_in_ndma_flood_tier1", False)),
+        real_money_gaming_flag=bool(profile.get("real_money_gaming_flag", False)),
+        crypto_vda_flag=bool(profile.get("crypto_vda_flag", False)),
+    )
+
+
+def _apply_profile_score_boosts(scores: dict, profile: dict) -> dict:
+    boosts = {}
+
+    for item in profile.get("data_handled", []) or []:
+        if item == "Health / medical records":
+            boosts["Cyber Technical Risk"] = max(boosts.get("Cyber Technical Risk", 0), 10)
+            boosts["Data Privacy Risk"] = max(boosts.get("Data Privacy Risk", 0), 12)
+        elif item == "Payments / financial transactions":
+            boosts["Cyber Technical Risk"] = max(boosts.get("Cyber Technical Risk", 0), 8)
+            boosts["Governance & Fraud Risk"] = max(boosts.get("Governance & Fraud Risk", 0), 8)
+        elif item == "Minors' / children's data":
+            boosts["Data Privacy Risk"] = max(boosts.get("Data Privacy Risk", 0), 15)
+            boosts["Regulatory Compliance Risk"] = max(boosts.get("Regulatory Compliance Risk", 0), 12)
+        elif item == "Employee / HR data (payroll, biometrics)":
+            boosts["Data Privacy Risk"] = max(boosts.get("Data Privacy Risk", 0), 8)
+            boosts["Cyber Technical Risk"] = max(boosts.get("Cyber Technical Risk", 0), 5)
+        elif item == "Intellectual property / source code":
+            boosts["IP Infringement Risk"] = max(boosts.get("IP Infringement Risk", 0), 12)
+        elif item == "Location / GPS tracking data":
+            boosts["Data Privacy Risk"] = max(boosts.get("Data Privacy Risk", 0), 6)
+
+    for item in profile.get("regulatory", []) or []:
+        if item == "RBI / SEBI / IRDAI licensed":
+            boosts["Regulatory Compliance Risk"] = max(boosts.get("Regulatory Compliance Risk", 0), 15)
+            boosts["Governance & Fraud Risk"] = max(boosts.get("Governance & Fraud Risk", 0), 10)
+        elif item == "FSSAI / food safety":
+            boosts["Regulatory Compliance Risk"] = max(boosts.get("Regulatory Compliance Risk", 0), 12)
+            boosts["Reputation Risk"] = max(boosts.get("Reputation Risk", 0), 10)
+        elif item == "CDSCO / medical devices":
+            boosts["Regulatory Compliance Risk"] = max(boosts.get("Regulatory Compliance Risk", 0), 15)
+            boosts["Liability Risk"] = max(boosts.get("Liability Risk", 0), 12)
+        elif item == "NMC / telemedicine regulations":
+            boosts["Regulatory Compliance Risk"] = max(boosts.get("Regulatory Compliance Risk", 0), 12)
+            boosts["Liability Risk"] = max(boosts.get("Liability Risk", 0), 10)
+        elif item == "EPR / environmental compliance":
+            boosts["ESG & Climate Risk"] = max(boosts.get("ESG & Climate Risk", 0), 12)
+            boosts["Regulatory Compliance Risk"] = max(boosts.get("Regulatory Compliance Risk", 0), 8)
+        elif item == "Competition Act / CCI":
+            boosts["Governance & Fraud Risk"] = max(boosts.get("Governance & Fraud Risk", 0), 10)
+            boosts["Regulatory Compliance Risk"] = max(boosts.get("Regulatory Compliance Risk", 0), 8)
+        elif item == "DGCA / drone operations":
+            boosts["Liability Risk"] = max(boosts.get("Liability Risk", 0), 10)
+            boosts["Regulatory Compliance Risk"] = max(boosts.get("Regulatory Compliance Risk", 0), 8)
+
+    boosted = dict(scores)
+    for category, delta in boosts.items():
+        boosted[category] = min(100.0, boosted[category] + delta)
+    return boosted
+
+
+def analyze_profile(profile: dict) -> dict:
+    """Run the complete non-UI SPARC analysis for a profile dictionary."""
+    inp = _build_startup_input(profile)
+    decline_reason = check_hard_decline(inp)
+    if decline_reason:
+        return {
+            "input": inp,
+            "adjusters": build_scoring_adjusters(inp),
+            "scores": {},
+            "recommendations": [],
+            "hard_decline": decline_reason,
+        }
+
+    scores = _apply_profile_score_boosts(compute_risk_scores(inp), profile)
+    recommendations = recommend_products(
+        scores,
+        inp.sector,
+        inp.team_size,
+        inp.funding_stage,
+        inp=inp,
+    )
+    return {
+        "input": inp,
+        "adjusters": build_scoring_adjusters(inp),
+        "scores": scores,
+        "recommendations": recommendations,
+        "hard_decline": None,
+    }
 
 
 # =============================================================================

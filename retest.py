@@ -3,6 +3,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 from risk_engine import (
     SECTOR_PROFILES,
+    StartupInput,
     compute_risk_scores,
     recommend_products,
     priority_label,
@@ -12,7 +13,7 @@ from risk_engine import (
 
 random.seed(42)
 SECTORS = list(SECTOR_PROFILES.keys())
-SECTOR_WEIGHTS = [0.18, 0.14, 0.10, 0.10, 0.09, 0.08, 0.07, 0.06, 0.06, 0.04, 0.04, 0.02, 0.02]
+SECTOR_WEIGHTS = [0.18, 0.14, 0.10, 0.10, 0.09, 0.08, 0.07, 0.06, 0.06, 0.04, 0.04, 0.02, 0.02, 0.02]
 STAGES         = ["Pre-seed", "Seed", "Series A", "Series B+"]
 STAGE_WEIGHTS  = [0.25, 0.40, 0.22, 0.13]
 OPERATIONS     = ["Digital-only", "Physical-only", "Hybrid"]
@@ -30,6 +31,7 @@ OPS_BY_SECTOR  = {
     "HRtech":                      [0.80, 0.01, 0.19],
     "Gaming / Media / Content":    [0.85, 0.02, 0.13],
     "Foodtech / Cloud Kitchen":    [0.10, 0.50, 0.40],
+    "Crypto/VDA":                  [0.90, 0.00, 0.10],
 }
 DATA_SENSITIVITY = ["Low", "Medium", "High"]
 DATA_BY_SECTOR   = {
@@ -46,11 +48,22 @@ DATA_BY_SECTOR   = {
     "HRtech":                      [0.05, 0.25, 0.70],
     "Gaming / Media / Content":    [0.25, 0.55, 0.20],
     "Foodtech / Cloud Kitchen":    [0.25, 0.55, 0.20],
+    "Crypto/VDA":                  [0.02, 0.08, 0.90],
 }
 TEAM_BY_STAGE = {
     "Pre-seed": (2, 8), "Seed": (5, 30),
     "Series A": (20, 120), "Series B+": (80, 500),
 }
+
+def score_input(sector, stage, team, ops, data):
+    inp = StartupInput(
+        sector=sector,
+        funding_stage=stage,
+        team_size=team,
+        operations=ops,
+        data_sensitivity=data,
+    )
+    return inp, compute_risk_scores(inp)
 
 check_names = [
     "min_five_products", "overrides_respected", "exclusions_respected",
@@ -67,8 +80,8 @@ for i in range(100):
     data   = random.choices(DATA_SENSITIVITY, weights=DATA_BY_SECTOR[sector])[0]
     lo, hi = TEAM_BY_STAGE[stage]
     team   = random.randint(lo, hi)
-    scores = compute_risk_scores(sector, stage, team, ops, data)
-    recs   = recommend_products(scores, sector, team, stage)
+    inp, scores = score_input(sector, stage, team, ops, data)
+    recs   = recommend_products(scores, sector, team, stage, inp=inp)
     rec_keys = [r["key"] for r in recs]
 
     checks = {}
@@ -78,11 +91,14 @@ for i in range(100):
     excluded = SECTOR_EXCLUSIONS.get(sector, [])
     checks["exclusions_respected"] = not any(k in rec_keys for k in excluded)
     checks["priority_labels_correct"] = all(priority_label(r["score"]) == r["priority"] for r in recs)
-    sl = compute_risk_scores(sector, stage, team, ops, "Low")
-    sh = compute_risk_scores(sector, stage, team, ops, "High")
-    checks["cyber_monotone"] = sh["Cyber Risk"] >= sl["Cyber Risk"]
-    sp = compute_risk_scores(sector, stage, team, "Physical-only", data)
-    sd = compute_risk_scores(sector, stage, team, "Digital-only",  data)
+    _, sl = score_input(sector, stage, team, ops, "Low")
+    _, sh = score_input(sector, stage, team, ops, "High")
+    checks["cyber_monotone"] = (
+        sh["Cyber Technical Risk"] >= sl["Cyber Technical Risk"]
+        and sh["Data Privacy Risk"] >= sl["Data Privacy Risk"]
+    )
+    _, sp = score_input(sector, stage, team, "Physical-only", data)
+    _, sd = score_input(sector, stage, team, "Digital-only",  data)
     checks["property_ops_consistent"] = sp["Property Risk"] >= sd["Property Risk"]
     if stage in ("Series A", "Series B+"):
         checks["dno_funded_stage"] = "dno_liability" in rec_keys
@@ -132,8 +148,8 @@ print("  BOUNDARY TESTS")
 print("=" * 65)
 boundary_pass = boundary_total = 0
 for sector, stage, team, ops, data, desc in BOUNDARY_CASES:
-    scores   = compute_risk_scores(sector, stage, team, ops, data)
-    recs     = recommend_products(scores, sector, team, stage)
+    inp, scores = score_input(sector, stage, team, ops, data)
+    recs     = recommend_products(scores, sector, team, stage, inp=inp)
     rec_keys = [r["key"] for r in recs]
     ok = True
     fail_reason = ""
