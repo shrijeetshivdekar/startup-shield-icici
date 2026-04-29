@@ -3,7 +3,7 @@ competitor_catalog_expanded.py — SPARC competitive intelligence layer (EXPANDE
 =================================================================================
 Unlimited version of competitor_catalog.py.
 
-Contains 65 insurance products offered by ICICI Lombard's competitors and
+Contains 50 insurance products offered by ICICI Lombard's competitors and
 global specialty insurers — NOT currently in the ICICI Lombard product catalog
 defined in risk_engine.PRODUCT_CATALOG.
 
@@ -32,6 +32,15 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
+# =============================================================================
+# CLEANUP NOTE
+# Removed from all active recommender dictionaries because they were rechecked
+# and found to be clearly offered by ICICI Lombard/public ICICI wordings:
+# event_insurance, cattle_livestock, crop_weather_parametric,
+# surety_performance_bond, group_hospital_cash, group_critical_illness,
+# trade_credit_enhanced, carrier_legal_liability, crisis_solution_kr,
+# clinical_trial_indemnity_extended, comprehensive_product_recall.
+# =============================================================================
 
 # =============================================================================
 # HELPER
@@ -42,7 +51,6 @@ def _stage_at_or_above(stage: str, threshold_stages: tuple) -> bool:
         return order.index(stage) >= order.index(threshold_stages[0])
     except (ValueError, IndexError):
         return False
-
 
 def _profile_text(inp) -> str:
     """Return optional descriptive fields as lower-case text for niche gates."""
@@ -65,14 +73,12 @@ def _profile_text(inp) -> str:
             parts.append(str(value))
     return " ".join(parts).lower()
 
-
 def _mentions_any(inp, keywords: tuple[str, ...]) -> bool:
     text = _profile_text(inp)
     return any(keyword.lower() in text for keyword in keywords)
 
-
 # =============================================================================
-# COMPETITOR PRODUCT CATALOG — 65 products NOT in ICICI Lombard's PRODUCT_CATALOG
+# COMPETITOR PRODUCT CATALOG — 50 corrected whitespace products NOT in ICICI Lombard's PRODUCT_CATALOG
 # =============================================================================
 COMPETITOR_PRODUCT_CATALOG = {
 
@@ -424,25 +430,6 @@ COMPETITOR_PRODUCT_CATALOG = {
         ),
         "best_for": "Series A+ with independent directors, founders facing investor litigation risk.",
     },
-    "crisis_solution_kr": {
-        "name": "Crisis Solution / Kidnap, Ransom & Cyber Extortion",
-        "providers": "Tata AIG Crisis Solution Corporate 2.0 · AIG Crisis Resolution · Chubb",
-        "india_status": "Tata AIG filed; AIG via Indian commercial lines",
-        "what_it_covers": (
-            "K&R for executives travelling internationally; cyber-extortion / ransomware "
-            "negotiation; product-tamper threats; threats against family; pre-incident "
-            "consultancy. Covers ransom payments (where legally permissible), negotiation "
-            "costs, and post-event psychological support."
-        ),
-        "icici_equivalent": "None — kidnap/ransom is entirely outside ICICI's catalog",
-        "icici_gap": (
-            "Indian startup founders increasingly travel to high-risk jurisdictions "
-            "(MENA, Africa, Southeast Asia) for market entry. Series A+ startups with "
-            "international ops and ransomware exposure need K&R + cyber-extortion combined — "
-            "ICICI provides no affirmative cover for either vector."
-        ),
-        "best_for": "Fintech, Foodtech, D2C with international ops, Healthtech, Logistics.",
-    },
     "bankers_indemnity_blanket": {
         "name": "Bankers Blanket Bond / Financial Institution Crime",
         "providers": "Tata AIG Bankers Indemnity · Digit FI Crime · AIG Financial Institutions",
@@ -500,24 +487,6 @@ COMPETITOR_PRODUCT_CATALOG = {
     },
 
     # ── 5. PRODUCT / RECALL / LIFE SCIENCES (4 products) ─────────────────────
-    "comprehensive_product_recall": {
-        "name": "Comprehensive Product Recall Insurance",
-        "providers": "Tata AIG Comprehensive Product Recall · AIG Product Recall · Chubb",
-        "india_status": "Tata AIG filed",
-        "what_it_covers": (
-            "First-party recall costs (notification, logistics, destruction, repackaging), "
-            "third-party recall costs passed through supply chain, business interruption "
-            "from product withdrawal, and crisis management consultancy. Triggered by "
-            "FSSAI / CDSCO / BIS notices and voluntary recall decisions."
-        ),
-        "icici_equivalent": "Product Liability (third-party injury only — no first-party recall)",
-        "icici_gap": (
-            "Product Liability covers CLAIMS by injured consumers. It does NOT cover the "
-            "cost of RUNNING the recall. For D2C / FMCG / F&B startups, the recall logistics "
-            "alone can cost ₹5-50cr — an entirely uncovered first-party exposure."
-        ),
-        "best_for": "D2C / Consumer Brands, Foodtech / Cloud Kitchen, Healthtech (devices), Agritech.",
-    },
     "contaminated_product_insurance": {
         "name": "Contaminated Product Insurance (CPI)",
         "providers": "Tata AIG Contaminated Product · AIG Food Defence · Chubb",
@@ -555,27 +524,6 @@ COMPETITOR_PRODUCT_CATALOG = {
         ),
         "best_for": "Healthtech.MedDevice_SaMD, biotech, pharma R&D, gene-therapy startups.",
     },
-    "clinical_trial_indemnity_extended": {
-        "name": "Extended Clinical Trial Indemnity (Phase I–III + Post-Market)",
-        "providers": "Tata AIG Clinical Trials · AIG Life Science · Chubb (EMEA)",
-        "india_status": "Tata AIG filed; CDSCO mandates PI coverage for investigators",
-        "what_it_covers": (
-            "Broader than standard ICICI clinical trials — covers Phase I through Phase IV "
-            "(post-market surveillance), compassionate-use trials, combination products, "
-            "digital therapeutics (SaMD-regulated), and AI-assisted diagnosis trials. "
-            "Includes global multi-site coverage under a single master policy."
-        ),
-        "icici_equivalent": "Clinical Trials Insurance (Phase II/III only, India-site only)",
-        "icici_gap": (
-            "ICICI's clinical trials product is a legacy Phase II/III, India-only policy. "
-            "CDSCO's new Medical Device Rules 2017 + SaMD guidelines require Phase I + "
-            "post-market coverage. Global multi-site trials on a single policy are "
-            "standard practice globally but absent from ICICI's product."
-        ),
-        "best_for": "Healthtech, biotech conducting multi-phase or global clinical trials.",
-    },
-
-    # ── 6. SECTOR / NICHE LIABILITY (6 products) ─────────────────────────────
     "single_project_pi": {
         "name": "Single Project Professional Indemnity",
         "providers": "Tata AIG Single-Project PI · AIG · Liberty",
@@ -610,23 +558,6 @@ COMPETITOR_PRODUCT_CATALOG = {
             "weather-day delay, post-production negative loss."
         ),
         "best_for": "OTT, creator economy, advertising production, gaming-content studios.",
-    },
-    "carrier_legal_liability": {
-        "name": "Carrier's Legal Liability Insurance",
-        "providers": "Digit Carrier's Legal Liability (IRDAN158RP0074V01202021)",
-        "india_status": "Digit filed",
-        "what_it_covers": (
-            "Liability of a carrier (3PL, last-mile, freight) for loss / damage to the "
-            "goods being transported under the Carriage by Road Act 2007 or Bill of Lading. "
-            "Distinct from third-party vehicle liability."
-        ),
-        "icici_equivalent": "Marine Transit (covers cargo owner's interest, not carrier's)",
-        "icici_gap": (
-            "Marine Transit indemnifies the cargo OWNER. Carrier's Legal Liability "
-            "indemnifies the LOGISTICS COMPANY for its statutory liability to that owner. "
-            "Required for any 3PL or last-mile player taking custody of goods."
-        ),
-        "best_for": "Logistics / Mobility (3PL, last-mile, freight aggregators).",
     },
     "my_online_space_d2c": {
         "name": "Online Business Combo (Cyber + Brand + Content + IP)",
@@ -701,24 +632,6 @@ COMPETITOR_PRODUCT_CATALOG = {
         ),
         "best_for": "Cleantech (factory build), Logistics (FC build), D2C (own manufacturing build).",
     },
-    "surety_performance_bond": {
-        "name": "Surety Insurance / Performance Bonds",
-        "providers": "Bajaj Allianz Surety · Tata AIG Performance Surety · Digit Surety",
-        "india_status": "All three filed; IRDAI Surety Regulations 2022 enabled",
-        "what_it_covers": (
-            "Replaces bank guarantees in tenders, advance-payment, performance, and "
-            "retention contracts. Frees up bank credit lines + working capital. Required "
-            "for govt contracts (GeM, NHAI, IRCTC), large-EPC projects, and "
-            "recruitment-agent licensing (eMigrate)."
-        ),
-        "icici_equivalent": "None — ICICI Lombard has not yet filed surety",
-        "icici_gap": (
-            "Bank guarantees lock 100% margin money. A startup bidding ₹50cr govt contract "
-            "needs ₹5cr BG = ₹5cr blocked working capital. Surety insurance replaces this "
-            "with a 1-2% premium — pure capital-efficiency win. ICICI absent."
-        ),
-        "best_for": "Cleantech (govt EPC), HRtech (recruiting agent licence), Logistics, Edtech (PSU).",
-    },
     "specie_insurance": {
         "name": "Specie Insurance (High-Value Goods)",
         "providers": "Tata AIG Specie · AIG Specie · Lloyd's specie market",
@@ -775,40 +688,6 @@ COMPETITOR_PRODUCT_CATALOG = {
         ),
         "best_for": "Agritech.Aquaculture, fisheries-tech, blue-economy startups.",
     },
-    "cattle_livestock": {
-        "name": "Cattle / Livestock Insurance",
-        "providers": "Digit Cattle (IRDAN158RPMS0004V02202324) · Tata AIG Pashu Suraksha · Bajaj",
-        "india_status": "All three filed; aligned with NABARD subsidy schemes",
-        "what_it_covers": (
-            "Indemnity for death of cattle / buffalo / poultry / sheep due to disease, "
-            "accident, natural perils, or theft. Includes ear-tagging & RFID protocol. "
-            "NABARD subsidy covers 50% of premium under DEDS."
-        ),
-        "icici_equivalent": "None — not in ICICI's filed product set",
-        "icici_gap": (
-            "Dairy-tech, poultry-tech, and rural-financing fintech all need livestock cover "
-            "as collateral protection. ICICI absent; Digit + Tata AIG dominate."
-        ),
-        "best_for": "Agritech (dairy / poultry / sheep), rural fintech with livestock collateral.",
-    },
-    "crop_weather_parametric": {
-        "name": "Crop Weather Parametric Insurance (PMFBY-Alternative)",
-        "providers": "Digit Crop Parametric · AXA Climate · Swiss Re AgriAXA · WRMS-backed products",
-        "india_status": "IRDAI Use-and-File; Digit filed 2024; competes with PMFBY",
-        "what_it_covers": (
-            "Index-based payout for crop loss triggered by objective weather data — "
-            "deficit rainfall, excess temperature, frost, or soil moisture. Settles in "
-            "3-7 days via satellite data. Sold direct to farmers via agritech platforms "
-            "as an alternative to the government's PMFBY scheme."
-        ),
-        "icici_equivalent": "None — ICICI doesn't sell crop/agri insurance",
-        "icici_gap": (
-            "PMFBY is government-mandated for bank-loan farmers but has a 3-month claims "
-            "cycle. Agritech platforms (DeHaat, Ninjacart, Farmart) need instant-settlement "
-            "parametric products to embed in agri-credit/input services. ICICI absent."
-        ),
-        "best_for": "Agritech platforms, rural fintech, micro-insurance embedded in agri-credit.",
-    },
     "pet_insurance_b2c": {
         "name": "Pet Insurance (B2C / Embedded)",
         "providers": "Digit Pet Insurance (IRDAN158RP0006V01202223) · Bajaj · Future Generali",
@@ -846,38 +725,6 @@ COMPETITOR_PRODUCT_CATALOG = {
     },
 
     # ── 9. EMPLOYEE BENEFIT EXTENSIONS (5 products) ──────────────────────────
-    "group_critical_illness": {
-        "name": "Group Critical Illness Cover",
-        "providers": "Tata AIG Group Critical Illness · Digit Group CI · Bajaj",
-        "india_status": "All three filed",
-        "what_it_covers": (
-            "Lump-sum payout to employees on first diagnosis of 30+ critical illnesses. "
-            "Pays IN ADDITION to group health — the cash funds household expenses and "
-            "treatment outside cashless network."
-        ),
-        "icici_equivalent": "Group Health (reimburses hospital bills, no lump sum)",
-        "icici_gap": (
-            "Group Health pays the HOSPITAL; Critical Illness pays the EMPLOYEE in cash. "
-            "Top-tier startup talent expects this layered benefit — Series A+ table stakes."
-        ),
-        "best_for": "Series A+ startups competing for senior talent, deeptech/AI hiring CXOs.",
-    },
-    "group_hospital_cash": {
-        "name": "Group Hospital Cash / Hospi-Daily",
-        "providers": "Tata AIG Group Hospital Cash · Digit Group Hospital Cash · Bajaj",
-        "india_status": "All three filed",
-        "what_it_covers": (
-            "Fixed daily cash benefit (₹1,000-₹5,000/day) per day of hospitalisation, "
-            "irrespective of actual bill. Funds incidentals, attendant cost, lost income, "
-            "co-pays."
-        ),
-        "icici_equivalent": "Group Health (covers actual bill, no daily cash)",
-        "icici_gap": (
-            "Daily cash plugs the soft costs Group Health misses — attendant accommodation, "
-            "transport, lost wages for spouse. Highest utility-per-rupee add-on for employees with families."
-        ),
-        "best_for": "Logistics, Foodtech, D2C with high blue-collar workforce; employer-sponsored welfare.",
-    },
     "wage_protection_gig_parametric": {
         "name": "Wage-Protection Cover for Gig Workers (Parametric)",
         "providers": "Digit AQI Parametric (Delhi NCR 2025) · Digit Heat (Gujarat 2024) · Tata AIG Sandbox",
@@ -992,27 +839,6 @@ COMPETITOR_PRODUCT_CATALOG = {
         ),
         "best_for": "Fintech (insurtech API platforms), HRtech with embedded insurance benefits.",
     },
-    "trade_credit_enhanced": {
-        "name": "Enhanced Trade Credit / Receivables Insurance",
-        "providers": "Euler Hermes (Allianz) · Coface · Atradius · Bajaj Trade Credit",
-        "india_status": "Euler Hermes and Coface operate in India via intermediaries",
-        "what_it_covers": (
-            "Broader than ICICI's trade credit — covers political risk / country risk "
-            "on export receivables, pre-shipment credit risk, single-buyer concentration "
-            "limits, and non-payment from sovereign / SOE buyers. Includes credit "
-            "information and buyer monitoring service."
-        ),
-        "icici_equivalent": "Trade Credit Insurance (domestic, limited cross-border)",
-        "icici_gap": (
-            "ICICI Trade Credit is primarily domestic-focused with limited export-country "
-            "risk coverage. For SaaS, Logistics, and D2C startups with US/EU/MENA "
-            "enterprise receivables, Euler Hermes / Coface provide superior country-risk "
-            "models and active debtor monitoring."
-        ),
-        "best_for": "B2B SaaS with international ARR, Logistics (export freight), D2C export brands.",
-    },
-
-    # ── 11. POLITICAL / TRADE RISK (3 products) ──────────────────────────────
     "comprehensive_political_violence": {
         "name": "Comprehensive Political Violence Insurance",
         "providers": "Digit Comprehensive Political Violence (IRDAN158CP0177V01201920) · Lloyd's PVT",
@@ -1069,23 +895,6 @@ COMPETITOR_PRODUCT_CATALOG = {
     },
 
     # ── 12. EVENTS / REAL ESTATE / MISC (4 products) ─────────────────────────
-    "event_insurance": {
-        "name": "Event Insurance",
-        "providers": "Tata AIG Event Insurance · Digit Event (IRDAN158RP0002V01202324) · Bajaj",
-        "india_status": "Tata AIG and Digit filed",
-        "what_it_covers": (
-            "Cancellation, abandonment, or postponement of events due to weather, illness "
-            "of speaker / artiste, venue damage, or regulatory shutdown. Plus public "
-            "liability at event, equipment damage, and ticket-revenue protection."
-        ),
-        "icici_equivalent": "Public Liability (event-day only, no cancellation cover)",
-        "icici_gap": (
-            "Event cancellation is a separate FIRST-PARTY peril; PL covers only "
-            "third-party claims. Conference/event-tech startups need both — ICICI files "
-            "only PL."
-        ),
-        "best_for": "Eventtech (Konfhub, Hubilo), conference platforms, B2B sales-event organisers.",
-    },
     "coop_society_liability": {
         "name": "Co-operative Society Management Committee Liability",
         "providers": "Digit Co-operative Society Mgmt Liability (IRDAN158RP0015V01202223)",
@@ -1204,7 +1013,6 @@ COMPETITOR_PRODUCT_CATALOG = {
     },
 }
 
-
 # =============================================================================
 # COMPETITOR PRODUCT RISK MAP
 # Weights are 0.0 – 1.0 multipliers applied to each risk dimension.
@@ -1293,11 +1101,6 @@ COMPETITOR_PRODUCT_RISK_MAP = {
         "Liability Risk": 0.6, "Governance & Fraud Risk": 0.7,
         "Key Person Risk": 0.4, "Regulatory Compliance Risk": 0.4,
     },
-    "crisis_solution_kr": {
-        "Key Person Risk": 0.7, "Cyber Technical Risk": 0.5,
-        "Liability Risk": 0.3, "Geopolitical Risk": 0.4,
-        "Reputation Risk": 0.5,
-    },
     "bankers_indemnity_blanket": {
         "Cyber Technical Risk": 0.6, "Governance & Fraud Risk": 0.8,
         "Regulatory Compliance Risk": 0.5,
@@ -1311,10 +1114,6 @@ COMPETITOR_PRODUCT_RISK_MAP = {
         "Governance & Fraud Risk": 0.3,
     },
     # Product / Recall / Life Sciences
-    "comprehensive_product_recall": {
-        "Liability Risk": 0.8, "Reputation Risk": 0.7,
-        "Regulatory Compliance Risk": 0.4,
-    },
     "contaminated_product_insurance": {
         "Liability Risk": 0.7, "Reputation Risk": 0.8,
         "Regulatory Compliance Risk": 0.4,
@@ -1323,20 +1122,12 @@ COMPETITOR_PRODUCT_RISK_MAP = {
         "Liability Risk": 0.9, "Regulatory Compliance Risk": 0.7,
         "IP Infringement Risk": 0.4,
     },
-    "clinical_trial_indemnity_extended": {
-        "Liability Risk": 0.8, "Regulatory Compliance Risk": 0.8,
-        "Key Person Risk": 0.2,
-    },
-    # Sector / niche liability
     "single_project_pi": {
         "Liability Risk": 0.9, "Key Person Risk": 0.2,
     },
     "media_production_insurance": {
         "Property Risk": 0.5, "Liability Risk": 0.5,
         "IP Infringement Risk": 0.6, "Reputation Risk": 0.4,
-    },
-    "carrier_legal_liability": {
-        "Liability Risk": 0.9, "Regulatory Compliance Risk": 0.4,
     },
     "my_online_space_d2c": {
         "Cyber Technical Risk": 0.6, "IP Infringement Risk": 0.6,
@@ -1354,10 +1145,6 @@ COMPETITOR_PRODUCT_RISK_MAP = {
     "builders_risk": {
         "Property Risk": 0.9, "Liability Risk": 0.3,
     },
-    "surety_performance_bond": {
-        "Liability Risk": 0.5, "Regulatory Compliance Risk": 0.6,
-        "Governance & Fraud Risk": 0.3,
-    },
     "specie_insurance": {
         "Property Risk": 0.7, "Governance & Fraud Risk": 0.4,
     },
@@ -1369,13 +1156,6 @@ COMPETITOR_PRODUCT_RISK_MAP = {
     "aquaculture_insurance": {
         "Property Risk": 0.7, "ESG & Climate Risk": 0.5,
     },
-    "cattle_livestock": {
-        "Property Risk": 0.6, "ESG & Climate Risk": 0.3,
-    },
-    "crop_weather_parametric": {
-        "ESG & Climate Risk": 0.9, "Property Risk": 0.5,
-        "Gig & Labour Risk": 0.3,
-    },
     "pet_insurance_b2c": {
         "Liability Risk": 0.4, "Property Risk": 0.3,
         "Reputation Risk": 0.3,
@@ -1385,14 +1165,6 @@ COMPETITOR_PRODUCT_RISK_MAP = {
         "Regulatory Compliance Risk": 0.4,
     },
     # Employee benefit
-    "group_critical_illness": {
-        "Key Person Risk": 0.6, "Liability Risk": 0.2,
-        "Gig & Labour Risk": 0.3,
-    },
-    "group_hospital_cash": {
-        "Key Person Risk": 0.4, "Gig & Labour Risk": 0.4,
-        "Liability Risk": 0.2,
-    },
     "wage_protection_gig_parametric": {
         "Gig & Labour Risk": 1.0, "Regulatory Compliance Risk": 0.5,
         "ESG & Climate Risk": 0.3, "Reputation Risk": 0.3,
@@ -1418,11 +1190,6 @@ COMPETITOR_PRODUCT_RISK_MAP = {
         "Liability Risk": 0.6, "Regulatory Compliance Risk": 0.8,
         "Data Privacy Risk": 0.4,
     },
-    "trade_credit_enhanced": {
-        "Liability Risk": 0.4, "Geopolitical Risk": 0.6,
-        "Governance & Fraud Risk": 0.4,
-    },
-    # Political / trade risk
     "comprehensive_political_violence": {
         "Property Risk": 0.6, "Geopolitical Risk": 0.7,
         "Liability Risk": 0.3,
@@ -1436,10 +1203,6 @@ COMPETITOR_PRODUCT_RISK_MAP = {
         "Regulatory Compliance Risk": 0.3,
     },
     # Events / real estate / misc
-    "event_insurance": {
-        "Property Risk": 0.4, "Liability Risk": 0.5,
-        "Reputation Risk": 0.4, "ESG & Climate Risk": 0.3,
-    },
     "coop_society_liability": {
         "Liability Risk": 0.6, "Governance & Fraud Risk": 0.5,
         "Regulatory Compliance Risk": 0.4,
@@ -1466,7 +1229,6 @@ COMPETITOR_PRODUCT_RISK_MAP = {
         "Governance & Fraud Risk": 0.3,
     },
 }
-
 
 # =============================================================================
 # SECTOR RELEVANCE
@@ -1547,10 +1309,6 @@ COMPETITOR_SECTOR_RELEVANCE = {
         "Cleantech / Climatetech", "Logistics / Mobility",
         "Foodtech / Cloud Kitchen", "Gaming / Media / Content",
     },
-    "crisis_solution_kr": {
-        "Fintech", "Foodtech / Cloud Kitchen", "D2C / Consumer Brands",
-        "Healthtech", "Logistics / Mobility",
-    },
     "bankers_indemnity_blanket": {
         "Fintech",
     },
@@ -1563,17 +1321,10 @@ COMPETITOR_SECTOR_RELEVANCE = {
         "D2C / Consumer Brands", "Deeptech / AI / Robotics",
         "Cleantech / Climatetech",
     },
-    "comprehensive_product_recall": {
-        "D2C / Consumer Brands", "Foodtech / Cloud Kitchen", "Healthtech",
-        "Agritech",
-    },
     "contaminated_product_insurance": {
         "Foodtech / Cloud Kitchen", "D2C / Consumer Brands",
     },
     "life_sciences_liability": {
-        "Healthtech",
-    },
-    "clinical_trial_indemnity_extended": {
         "Healthtech",
     },
     "single_project_pi": {
@@ -1582,9 +1333,6 @@ COMPETITOR_SECTOR_RELEVANCE = {
     },
     "media_production_insurance": {
         "Gaming / Media / Content",
-    },
-    "carrier_legal_liability": {
-        "Logistics / Mobility",
     },
     "my_online_space_d2c": {
         "D2C / Consumer Brands", "Foodtech / Cloud Kitchen",
@@ -1600,10 +1348,6 @@ COMPETITOR_SECTOR_RELEVANCE = {
         "Cleantech / Climatetech", "Logistics / Mobility",
         "D2C / Consumer Brands", "Foodtech / Cloud Kitchen",
     },
-    "surety_performance_bond": {
-        "Cleantech / Climatetech", "HRtech", "Logistics / Mobility",
-        "Edtech", "Deeptech / AI / Robotics",
-    },
     "specie_insurance": {
         "D2C / Consumer Brands", "Deeptech / AI / Robotics",
     },
@@ -1613,26 +1357,12 @@ COMPETITOR_SECTOR_RELEVANCE = {
     "aquaculture_insurance": {
         "Agritech",
     },
-    "cattle_livestock": {
-        "Agritech", "Fintech",
-    },
-    "crop_weather_parametric": {
-        "Agritech", "Fintech",
-    },
     "pet_insurance_b2c": {
         "D2C / Consumer Brands", "Healthtech",
     },
     "microinsurance_sachet": {
         "Fintech", "D2C / Consumer Brands", "Logistics / Mobility",
         "Edtech",
-    },
-    "group_critical_illness": {
-        "SaaS / Enterprise Software", "Fintech", "Deeptech / AI / Robotics",
-        "Healthtech", "HRtech", "Legaltech", "Edtech",
-    },
-    "group_hospital_cash": {
-        "Logistics / Mobility", "Foodtech / Cloud Kitchen",
-        "D2C / Consumer Brands", "Cleantech / Climatetech", "Agritech",
     },
     "wage_protection_gig_parametric": {
         "Logistics / Mobility", "Foodtech / Cloud Kitchen",
@@ -1654,10 +1384,6 @@ COMPETITOR_SECTOR_RELEVANCE = {
     "insurance_embedded_rails": {
         "Fintech", "HRtech",
     },
-    "trade_credit_enhanced": {
-        "SaaS / Enterprise Software", "Logistics / Mobility",
-        "D2C / Consumer Brands", "Fintech",
-    },
     "comprehensive_political_violence": {
         "D2C / Consumer Brands", "Logistics / Mobility",
         "Foodtech / Cloud Kitchen", "Cleantech / Climatetech",
@@ -1669,10 +1395,6 @@ COMPETITOR_SECTOR_RELEVANCE = {
     "export_credit_guarantee": {
         "SaaS / Enterprise Software", "Logistics / Mobility",
         "D2C / Consumer Brands",
-    },
-    "event_insurance": {
-        "Gaming / Media / Content", "SaaS / Enterprise Software",
-        "Edtech", "HRtech",
     },
     "coop_society_liability": {
         "Agritech", "Foodtech / Cloud Kitchen",
@@ -1695,7 +1417,6 @@ COMPETITOR_SECTOR_RELEVANCE = {
         "Deeptech / AI / Robotics", "D2C / Consumer Brands",
     },
 }
-
 
 # =============================================================================
 # TRIGGERS — input-field predicates that gate product visibility
@@ -1783,9 +1504,6 @@ COMPETITOR_TRIGGERS: dict[str, Callable] = {
     "side_a_dno_edge":
         lambda inp: _stage_at_or_above(inp.funding_stage, ("Series A",))
                     and bool(getattr(inp, "institutional_investors_on_board", False)),
-    "crisis_solution_kr":
-        lambda inp: _stage_at_or_above(inp.funding_stage, ("Series A",))
-                    or bool(getattr(inp, "founder_controversy_flag", False)),
     "bankers_indemnity_blanket":
         lambda inp: getattr(inp, "rbi_registration", None) in {"NBFC", "PA", "PPI", "AA"},
     "ip_infringement_defence":
@@ -1803,14 +1521,15 @@ COMPETITOR_TRIGGERS: dict[str, Callable] = {
                             "holding company", "exit", "restructuring",
                         ))
                     ),
-    "comprehensive_product_recall":
-        lambda inp: getattr(inp, "hardware_software_split", 0.0) >= 0.30
-                    or inp.sector in {"D2C / Consumer Brands", "Foodtech / Cloud Kitchen"},
     "contaminated_product_insurance":
         lambda inp: inp.sector in {"Foodtech / Cloud Kitchen", "D2C / Consumer Brands"},
-    "clinical_trial_indemnity_extended":
+    "life_sciences_liability":
         lambda inp: inp.sector == "Healthtech"
-                    and "MedDevice" in (getattr(inp, "sub_sector", "") or ""),
+                    or _mentions_any(inp, (
+                        "biotech", "pharma", "clinical trial", "medical device",
+                        "gene therapy", "samd", "cdsco", "life science",
+                        "diagnostics", "cro",
+                    )),
     "single_project_pi":
         lambda inp: getattr(inp, "b2b_pct", 0.5) >= 0.70
                     and _stage_at_or_above(inp.funding_stage, ("Series A",)),
@@ -1818,8 +1537,6 @@ COMPETITOR_TRIGGERS: dict[str, Callable] = {
         lambda inp: getattr(inp, "sub_sector", "") in {
             "Gaming.OTT", "Gaming.Creator_Economy",
         } or inp.sector == "Gaming / Media / Content",
-    "carrier_legal_liability":
-        lambda inp: inp.sector == "Logistics / Mobility",
     "my_online_space_d2c":
         lambda inp: inp.sector in {"D2C / Consumer Brands", "Foodtech / Cloud Kitchen"},
     "esports_gaming_liability":
@@ -1835,9 +1552,6 @@ COMPETITOR_TRIGGERS: dict[str, Callable] = {
                 or _mentions_any(inp, ("epc", "construction", "project", "infra", "solar", "warehouse"))
             )
         ),
-    "surety_performance_bond":
-        lambda inp: inp.team_size >= 25
-                    or inp.sector in {"Cleantech / Climatetech", "HRtech"},
     "specie_insurance":
         lambda inp: getattr(inp, "sub_sector", "") in {
             "D2C.Apparel_Footwear", "D2C.Hardware_Electronics",
@@ -1847,14 +1561,6 @@ COMPETITOR_TRIGGERS: dict[str, Callable] = {
                     or "Energy" in (getattr(inp, "sub_sector", "") or ""),
     "aquaculture_insurance":
         lambda inp: "Aqua" in (getattr(inp, "sub_sector", "") or ""),
-    "cattle_livestock":
-        lambda inp: any(s in (getattr(inp, "sub_sector", "") or "")
-                        for s in ("Dairy", "Livestock", "Cattle", "Poultry"))
-                    or _mentions_any(inp, ("dairy", "livestock", "cattle", "poultry", "animal husbandry")),
-    "crop_weather_parametric":
-        lambda inp: inp.sector == "Agritech"
-                    or (inp.sector == "Fintech"
-                        and "Rural" in (getattr(inp, "sub_sector", "") or "")),
     "pet_insurance_b2c":
         lambda inp: _mentions_any(inp, ("pet", "veterinary", "vet-tech", "veterinarian", "animal companion")),
     "microinsurance_sachet":
@@ -1863,11 +1569,6 @@ COMPETITOR_TRIGGERS: dict[str, Callable] = {
                         "microinsurance", "sachet", "embedded insurance",
                         "payg", "pay-as-you-go", "low-income", "gig worker",
                     )),
-    "group_critical_illness":
-        lambda inp: _stage_at_or_above(inp.funding_stage, ("Series A",))
-                    and inp.team_size >= 15,
-    "group_hospital_cash":
-        lambda inp: inp.team_size >= 20,
     "wage_protection_gig_parametric":
         lambda inp: getattr(inp, "gig_headcount_pct", 0.0) > 0.20,
     "mental_health_wellness_benefit":
@@ -1884,9 +1585,6 @@ COMPETITOR_TRIGGERS: dict[str, Callable] = {
     "insurance_embedded_rails":
         lambda inp: inp.sector == "Fintech"
                     and getattr(inp, "rbi_registration", None) in {"CA", "PA"},
-    "trade_credit_enhanced":
-        lambda inp: getattr(inp, "export_eu_pct", 0.0) > 0.10
-                    or getattr(inp, "b2b_pct", 0.0) >= 0.70,
     "comprehensive_political_violence":
         lambda inp: bool(getattr(inp, "state_footprint", []))
                     and len(getattr(inp, "state_footprint", []) or []) >= 3,
@@ -1895,9 +1593,6 @@ COMPETITOR_TRIGGERS: dict[str, Callable] = {
                     or _stage_at_or_above(inp.funding_stage, ("Series B+",)),
     "export_credit_guarantee":
         lambda inp: getattr(inp, "export_eu_pct", 0.0) > 0.10,
-    "event_insurance":
-        lambda inp: inp.sector in {"Gaming / Media / Content", "Edtech"}
-                    or getattr(inp, "sub_sector", "") == "Gaming.Creator_Economy",
     "coop_society_liability":
         lambda inp: _mentions_any(inp, ("cooperative", "co-op", "coop", "fpo", "farmer producer")),
     "real_estate_techbroker_liability":
@@ -1922,7 +1617,6 @@ COMPETITOR_TRIGGERS: dict[str, Callable] = {
                     ),
 }
 
-
 AI_CYBER_DATA_PRODUCTS = {
     "ai_performance_liability", "embedded_cyber_via_compliance",
     "quantum_computing_liability", "active_cyber_response",
@@ -1931,9 +1625,8 @@ AI_CYBER_DATA_PRODUCTS = {
 }
 
 PRODUCT_RECALL_PRODUCTS = {
-    "robotics_liability", "comprehensive_product_recall",
-    "contaminated_product_insurance", "life_sciences_liability",
-    "clinical_trial_indemnity_extended", "specie_insurance",
+    "robotics_liability", "contaminated_product_insurance",
+    "life_sciences_liability", "specie_insurance",
 }
 
 INFRA_ENERGY_PRODUCTS = {
@@ -1941,8 +1634,7 @@ INFRA_ENERGY_PRODUCTS = {
     "carbon_credit_invalidation", "parametric_weather_climate",
     "pollution_legal_liability", "solar_module_insurance",
     "offshore_energy_liability", "biodiversity_natural_capital",
-    "builders_risk", "surety_performance_bond",
-    "nuclear_liability_extension", "fleet_telematics_ubi",
+    "builders_risk", "nuclear_liability_extension", "fleet_telematics_ubi",
     "comprehensive_political_violence", "political_risk_expropriation",
     "export_credit_guarantee",
 }
@@ -1950,29 +1642,24 @@ INFRA_ENERGY_PRODUCTS = {
 FINTECH_PAYMENT_CREDIT_PRODUCTS = {
     "blockchain_custody_liability", "bankers_indemnity_blanket",
     "bnpl_credit_default_embedded", "payment_systems_disruption",
-    "insurance_embedded_rails", "trade_credit_enhanced",
+    "insurance_embedded_rails",
 }
 
 EMPLOYEE_BENEFIT_PRODUCTS = {
-    "group_critical_illness", "group_hospital_cash",
     "wage_protection_gig_parametric", "mental_health_wellness_benefit",
     "esop_key_person_extension",
 }
 
 LEGAL_REGULATORY_PRODUCTS = {
-    "warranty_indemnity", "side_a_dno_edge", "crisis_solution_kr",
-    "tax_liability_insurance", "single_project_pi",
-    "legaltech_regulatory_defence", "legal_defence_fund_cover",
+    "warranty_indemnity", "side_a_dno_edge", "tax_liability_insurance",
+    "single_project_pi", "legaltech_regulatory_defence", "legal_defence_fund_cover",
     "real_estate_techbroker_liability", "edtech_learning_platform_liability",
     "hrtech_background_check_liability",
 }
 
 NICHE_VERTICAL_PRODUCTS = {
-    "media_production_insurance", "carrier_legal_liability",
-    "my_online_space_d2c", "esports_gaming_liability",
-    "aquaculture_insurance", "cattle_livestock",
-    "crop_weather_parametric", "pet_insurance_b2c",
-    "microinsurance_sachet", "event_insurance",
+    "media_production_insurance", "my_online_space_d2c", "esports_gaming_liability",
+    "aquaculture_insurance", "pet_insurance_b2c", "microinsurance_sachet",
     "coop_society_liability",
 }
 
@@ -1981,7 +1668,6 @@ def _add_signal(signals: list[str], label: str, score: float, cap: float = 100.0
     if label not in signals:
         signals.append(label)
     return min(cap, score)
-
 
 def _context_relevance(key: str, sector: str, team_size: int, funding_stage: str, inp) -> tuple[float, list[str]]:
     """Return independent contextual fit score and explainable match signals."""
@@ -2113,18 +1799,12 @@ def _context_relevance(key: str, sector: str, team_size: int, funding_stage: str
     elif key in NICHE_VERTICAL_PRODUCTS:
         if key == "media_production_insurance" and sector == "Gaming / Media / Content":
             mark("media/content sector", 55)
-        elif key == "carrier_legal_liability" and sector == "Logistics / Mobility":
-            mark("logistics/carrier sector", 55)
         elif key == "my_online_space_d2c" and sector in {"D2C / Consumer Brands", "Foodtech / Cloud Kitchen", "Gaming / Media / Content"}:
             mark("online consumer brand context", 45)
         elif key == "esports_gaming_liability" and sector == "Gaming / Media / Content":
             mark("gaming/esports context", 55)
         elif key == "aquaculture_insurance" and _mentions_any(inp, ("aqua", "aquaculture", "fish", "shrimp")):
             mark("aquaculture keyword match", 70)
-        elif key == "cattle_livestock" and _mentions_any(inp, ("dairy", "livestock", "cattle", "poultry", "animal husbandry")):
-            mark("livestock keyword match", 70)
-        elif key == "crop_weather_parametric" and sector == "Agritech":
-            mark("agritech/crop exposure", 45)
         elif key == "pet_insurance_b2c" and _mentions_any(inp, ("pet", "veterinary", "vet-tech", "veterinarian", "animal companion")):
             mark("petcare keyword match", 70)
         elif key == "microinsurance_sachet" and (
@@ -2132,8 +1812,6 @@ def _context_relevance(key: str, sector: str, team_size: int, funding_stage: str
             or _mentions_any(inp, ("microinsurance", "sachet", "embedded insurance", "payg", "low-income"))
         ):
             mark("microinsurance distribution context", 60)
-        elif key == "event_insurance" and sector in {"Gaming / Media / Content", "Edtech", "HRtech"}:
-            mark("event/community context", 45)
         elif key == "coop_society_liability" and _mentions_any(inp, ("cooperative", "co-op", "coop", "fpo", "farmer producer")):
             mark("co-op/FPO keyword match", 70)
 
@@ -2152,7 +1830,6 @@ def _context_relevance(key: str, sector: str, team_size: int, funding_stage: str
         score = min(score, broad_product_context_caps[key])
 
     return round(min(score, 100.0), 1), signals[:8]
-
 
 def _ranking_bonus(key: str, inp) -> float:
     """Small tie-breaker bonus used only for sorting, not displayed scores."""
@@ -2176,7 +1853,6 @@ def _ranking_bonus(key: str, inp) -> float:
             bonus += 3.5
 
     return bonus
-
 
 # =============================================================================
 # RECOMMENDER
@@ -2253,14 +1929,12 @@ def recommend_competitor_products(
         out.append(meta)
     return out
 
-
 def _priority_label(score: float) -> str:
     if score >= 70:
         return "Critical Gap"
     if score >= 55:
         return "Strategic Gap"
     return "Tactical Gap"
-
 
 # =============================================================================
 # SELF-VALIDATION
@@ -2281,6 +1955,5 @@ def _validate_catalog() -> None:
                          "icici_equivalent", "icici_gap", "best_for"):
             if required not in meta:
                 raise ValueError(f"competitor product '{key}' missing field '{required}'")
-
 
 _validate_catalog()
