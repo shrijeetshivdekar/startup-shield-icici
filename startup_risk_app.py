@@ -29,6 +29,7 @@ from risk_engine import (
     recommend_products,
     check_hard_decline_by_subsector,
 )
+from competitor_catalog_expanded import recommend_competitor_products
 
 # =============================================================================
 # RISK DISPLAY GROUPS — 4 clusters for grouped scorecards in results
@@ -866,6 +867,82 @@ def generate_bundles(
         return None
 
 
+def generate_competitor_explainers(
+    startup_name: str,
+    sector: str,
+    stage: str,
+    team_size: int,
+    product_description: str,
+    competitor_recs: list,
+) -> dict:
+    """Simplify competitor-card copy in one bounded Gemini call."""
+    if not _GENAI_AVAILABLE or not competitor_recs:
+        return {}
+
+    payload = []
+    for rec in competitor_recs[:5]:
+        payload.append({
+            "key": rec.get("key", ""),
+            "name": rec.get("name", ""),
+            "providers": rec.get("providers", ""),
+            "what_it_covers": rec.get("what_it_covers", ""),
+            "icici_equivalent": rec.get("icici_equivalent", ""),
+            "icici_gap": rec.get("icici_gap", ""),
+            "matched_signals": rec.get("matched_signals", []),
+            "risk_fit": rec.get("risk_fit"),
+            "context_relevance": rec.get("context_relevance"),
+        })
+
+    prompt = (
+        "You are simplifying competitive insurance intelligence for an Indian "
+        "startup founder. Rewrite the three fields below so they are clear, "
+        "plain-English, and specific to the startup. Do not change the facts. "
+        "Do not invent insurers, limits, exclusions, or ICICI products. Keep each "
+        "field short: what_it_covers_simple max 45 words, "
+        "icici_equivalent_simple max 28 words, why_relevant_simple max 55 words.\n\n"
+        "Return ONLY valid JSON in this shape:\n"
+        "{\n"
+        '  "products": [\n'
+        "    {\n"
+        '      "key": "same key",\n'
+        '      "what_it_covers_simple": "plain explanation",\n'
+        '      "icici_equivalent_simple": "plain closest ICICI explanation",\n'
+        '      "why_relevant_simple": "plain relevance explanation for this startup"\n'
+        "    }\n"
+        "  ]\n"
+        "}\n\n"
+        f"STARTUP: {startup_name}; sector={sector}; stage={stage}; "
+        f"team_size={team_size}; description={product_description or 'not provided'}\n\n"
+        "COMPETITOR PRODUCTS:\n"
+        + json.dumps(payload, ensure_ascii=False)
+    )
+
+    try:
+        response = _GEMINI_CLIENT.models.generate_content(
+            model=_GEMINI_MODEL,
+            contents=prompt,
+            config=_genai_types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.25,
+                max_output_tokens=1800,
+            ),
+        )
+        result = json.loads(response.text)
+        allowed_keys = {rec.get("key") for rec in competitor_recs}
+        simplified = {}
+        for product in result.get("products", []):
+            key = product.get("key")
+            if key in allowed_keys:
+                simplified[key] = {
+                    "what_it_covers_simple": product.get("what_it_covers_simple", ""),
+                    "icici_equivalent_simple": product.get("icici_equivalent_simple", ""),
+                    "why_relevant_simple": product.get("why_relevant_simple", ""),
+                }
+        return simplified
+    except Exception:
+        return {}
+
+
 def render_bundle_card(bundle: dict) -> str:
     """Returns the HTML string for one insurance bundle card."""
     priority = bundle.get("priority", "Recommended")
@@ -1627,6 +1704,7 @@ if not st.session_state.get("show_results"):
             }
             st.session_state["show_results"] = True
             st.session_state["_bundle_data"] = None
+            st.session_state["_competitor_explainers"] = None
             st.rerun()
 
     st.stop()
@@ -1653,6 +1731,7 @@ biggest_fear     = _p.get("biggest_fear", "")
 if st.button("← Edit profile"):
     st.session_state["show_results"] = False
     st.session_state["_bundle_data"] = None
+    st.session_state["_competitor_explainers"] = None
     st.rerun()
 
 _inp = StartupInput(
@@ -1687,6 +1766,17 @@ _inp = StartupInput(
     top1000_listed_customer_rev_pct=_p.get("top1000_listed_customer_rev_pct", 0.0),
     facility_climate_risk_zone=_p.get("facility_climate_risk_zone", "Low"),
 )
+
+# Attach UI-only context for the competitive-intelligence recommender. The core
+# risk engine ignores these dynamic attributes, but the expanded competitor
+# catalog uses them to avoid recommending niche products from risk scores alone.
+_inp.product_description = product_description
+_inp.customer_type = customer_type
+_inp.data_handled = data_handled
+_inp.regulatory = regulatory
+_inp.physical_assets = physical_assets
+_inp.biggest_fear = biggest_fear
+
 scores = compute_risk_scores(_inp)
 
 # ── Post-score boosts from data_handled and regulatory dropdowns ──────────────
@@ -1811,105 +1901,6 @@ st.markdown(
     f'</div>',
     unsafe_allow_html=True,
 )
-
-st.markdown("---")
-
-# ── Grouped risk breakdown (4 clusters) ─────────────────────────────────
-st.markdown(
-    '<div class="section-heading">Risk Breakdown by Category</div>'
-    '<div class="section-sub">Scores grouped across four risk themes — hover for values.</div>',
-    unsafe_allow_html=True,
-)
-for group_name, group_keys in RISK_DISPLAY_GROUPS.items():
-    group_scores = {k: scores[k] for k in group_keys if k in scores}
-    if not group_scores:
-        continue
-    max_score = max(group_scores.values())
-    if max_score >= 70:
-        g_color = "#AD1E23"
-    elif max_score >= 40:
-        g_color = "#D97706"
-    else:
-        g_color = "#059669"
-    cols = st.columns(len(group_scores))
-    st.markdown(
-        f'<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;'
-        f'text-transform:uppercase;color:{g_color};margin:-0.4rem 0 0.5rem 0;">'
-        f'{group_name}</div>',
-        unsafe_allow_html=True,
-    )
-    for col, (cat, val) in zip(cols, group_scores.items()):
-        col.metric(cat, f"{val:.0f}/100")
-
-# ── Risk Intelligence panel ──────────────────────────────────────────────
-st.markdown(
-    '<div class="section-heading" style="margin-top:1.25rem;">Risk Intelligence</div>'
-    '<div class="section-sub">Statistics and forecasts behind your scores — '
-    'only categories scoring 40+ are shown.</div>',
-    unsafe_allow_html=True,
-)
-
-_active_cats = [cat for cat, val in scores.items() if val >= 40]
-for cat in _active_cats:
-    stat_data = RISK_CATEGORY_STATS.get(cat, {})
-    cite_list = REGULATORY_CITATIONS.get(cat, [])
-    score_val = scores[cat]
-    if score_val >= 70:
-        badge_bg, badge_color = "#FEE2E2", "#991B1B"
-    else:
-        badge_bg, badge_color = "#FEF3C7", "#92400E"
-
-    with st.expander(f"{cat}  —  {score_val:.0f}/100"):
-        if stat_data:
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown(
-                    f'<div style="background:#F0F9FF;border-left:3px solid #0EA5E9;'
-                    f'border-radius:8px;padding:0.8rem 1rem;margin-bottom:0.6rem;">'
-                    f'<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
-                    f'text-transform:uppercase;color:#0369A1;margin-bottom:0.4rem;">Current scenario</div>'
-                    f'<p style="font-size:0.84rem;color:#0F172A;line-height:1.65;margin:0;">'
-                    f'{stat_data.get("headline","")}</p>'
-                    f'<div style="font-size:0.7rem;color:#64748B;margin-top:0.5rem;">'
-                    f'📎 {stat_data.get("source","")}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-            with c2:
-                st.markdown(
-                    f'<div style="background:#F0FDF4;border-left:3px solid #22C55E;'
-                    f'border-radius:8px;padding:0.8rem 1rem;margin-bottom:0.6rem;">'
-                    f'<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
-                    f'text-transform:uppercase;color:#15803D;margin-bottom:0.4rem;">Forecast</div>'
-                    f'<p style="font-size:0.84rem;color:#0F172A;line-height:1.65;margin:0;">'
-                    f'{stat_data.get("forecast","")}</p>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-            sector_note = stat_data.get("sector_notes", {}).get(sector)
-            if sector_note:
-                st.markdown(
-                    f'<div style="background:{badge_bg};border-left:3px solid {badge_color};'
-                    f'border-radius:8px;padding:0.65rem 1rem;margin-bottom:0.6rem;">'
-                    f'<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
-                    f'text-transform:uppercase;color:{badge_color};margin-bottom:0.3rem;">'
-                    f'Why this matters for {sector}</div>'
-                    f'<p style="font-size:0.84rem;color:#0F172A;line-height:1.6;margin:0;">'
-                    f'{sector_note}</p>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-        if cite_list:
-            st.markdown(
-                '<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
-                'text-transform:uppercase;color:#94A3B8;margin:0.4rem 0 0.3rem 0;">'
-                'Statutes &amp; regulations</div>',
-                unsafe_allow_html=True,
-            )
-            for cite in cite_list:
-                st.markdown(f"- {cite}")
 
 st.markdown("---")
 
@@ -2053,6 +2044,340 @@ else:
             """,
             unsafe_allow_html=True,
         )
+
+# -- Competitive Intelligence: products NOT in ICICI Lombard's catalog --
+st.markdown("---")
+st.markdown(
+    '<div class="section-heading">Competitive Intelligence</div>'
+    '<div class="section-sub">Insurance products offered by Digit, Tata AIG, '
+    'Bajaj Allianz and global insurers including Munich Re, Vouch, Kita and AIG '
+    "that fill specific gaps in ICICI Lombard's current catalog, ranked by your "
+    'risk profile.</div>',
+    unsafe_allow_html=True,
+)
+
+competitor_recs = recommend_competitor_products(
+    scores,
+    sector,
+    team_size,
+    funding_stage,
+    _inp,
+    top_n=5,
+    min_score=45.0,
+)
+
+il_top5 = [r for r in recommendations if not r.get("mandatory", False)][:5]
+
+if competitor_recs and _GENAI_AVAILABLE and st.session_state.get("_competitor_explainers") is None:
+    with st.spinner("Simplifying competitive-insurance explanations..."):
+        st.session_state["_competitor_explainers"] = generate_competitor_explainers(
+            startup_name=startup_name,
+            sector=sector,
+            stage=funding_stage,
+            team_size=team_size,
+            product_description=product_description,
+            competitor_recs=competitor_recs,
+        )
+
+competitor_explainers = st.session_state.get("_competitor_explainers") or {}
+
+if not competitor_recs:
+    st.info(
+        "No competitor products score above the relevance threshold for this "
+        "profile. The existing ICICI Lombard catalog covers this startup's "
+        "primary exposures."
+    )
+else:
+    il_col, competitor_col = st.columns(2)
+    with il_col:
+        st.markdown(
+            '<div style="background:#FEF2F2;border-left:3px solid #AD1E23;'
+            'border-radius:8px;padding:0.75rem 1rem;">'
+            '<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
+            'text-transform:uppercase;color:#AD1E23;margin-bottom:0.4rem;">'
+            'Your top 5 - ICICI Lombard</div>'
+            + "".join(
+                f'<div style="font-size:0.84rem;color:#0F172A;margin:0.3rem 0;">'
+                f'<strong>{i + 1}.</strong> {r["name"]} '
+                f'<span style="color:#94A3B8;">- {r["score"]:.0f}/100</span>'
+                f'</div>'
+                for i, r in enumerate(il_top5)
+            )
+            + '</div>',
+            unsafe_allow_html=True,
+        )
+    with competitor_col:
+        st.markdown(
+            '<div style="background:#F0F9FF;border-left:3px solid #0EA5E9;'
+            'border-radius:8px;padding:0.75rem 1rem;">'
+            '<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
+            'text-transform:uppercase;color:#0369A1;margin-bottom:0.4rem;">'
+            'Top 5 competitor / global products not offered by IL</div>'
+            + "".join(
+                f'<div style="font-size:0.84rem;color:#0F172A;margin:0.3rem 0;">'
+                f'<strong>{i + 1}.</strong> {r["name"]} '
+                f'<span style="color:#94A3B8;">- {r["score"]:.0f}/100</span>'
+                f'</div>'
+                for i, r in enumerate(competitor_recs)
+            )
+            + '</div>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    for competitor in competitor_recs:
+        explainer = competitor_explainers.get(competitor.get("key"), {})
+        what_it_covers_text = (
+            explainer.get("what_it_covers_simple")
+            or competitor["what_it_covers"]
+        )
+        icici_equivalent_text = (
+            explainer.get("icici_equivalent_simple")
+            or competitor["icici_equivalent"]
+        )
+        why_relevant_text = (
+            explainer.get("why_relevant_simple")
+            or competitor["icici_gap"]
+        )
+        priority = competitor["priority"]
+        if priority == "Critical Gap":
+            badge_bg, badge_color, border_color = "#FEE2E2", "#991B1B", "#EF4444"
+        elif priority == "Strategic Gap":
+            badge_bg, badge_color, border_color = "#FEF3C7", "#92400E", "#F59E0B"
+        else:
+            badge_bg, badge_color, border_color = "#E0F2FE", "#075985", "#0EA5E9"
+        matched_signal_html = (
+            '<div style="display:flex;flex-wrap:wrap;gap:4px 6px;">'
+            + "".join(
+                f'<span style="display:inline-block;background:#F8FAFC;color:#475569;'
+                f'border:1px solid #E2E8F0;border-radius:999px;padding:2px 8px;'
+                f'font-size:0.68rem;line-height:1.45;">{signal}</span>'
+                for signal in competitor.get("matched_signals", [])
+            )
+            + '</div>'
+        ) if competitor.get("matched_signals", []) else (
+            '<span style="font-size:0.72rem;color:#94A3B8;">'
+            'No additional context signal returned.</span>'
+        )
+
+        st.markdown(
+            f"""
+            <div style="background:#FFFFFF;border:1px solid {border_color}33;
+                        border-left:4px solid {border_color};border-radius:12px;
+                        padding:1.1rem 1.3rem;margin-bottom:0.9rem;
+                        box-shadow:0 1px 3px rgba(15,23,42,0.04);">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;
+                          gap:0.75rem;margin-bottom:0.5rem;">
+                <div>
+                  <h4 style="font-size:1rem;font-weight:700;color:#0F172A;margin:0 0 0.2rem 0;">
+                    {competitor["name"]}
+                  </h4>
+                  <div style="font-size:0.74rem;color:#64748B;font-weight:500;">
+                    {competitor["providers"]}
+                  </div>
+                </div>
+                <div style="display:flex;gap:0.4rem;align-items:center;flex-shrink:0;">
+                  <span style="background:{badge_bg};color:{badge_color};
+                               font-size:0.65rem;font-weight:700;padding:3px 10px;
+                               border-radius:20px;letter-spacing:0.05em;
+                               text-transform:uppercase;">{priority}</span>
+                  <span style="background:#F1F5F9;color:#0F172A;font-size:0.78rem;
+                               font-weight:700;padding:3px 9px;border-radius:8px;">
+                    {competitor["score"]:.0f}/100
+                  </span>
+                </div>
+              </div>
+
+              <div style="font-size:0.78rem;color:#94A3B8;margin-bottom:0.55rem;">
+                <strong style="color:#475569;">India availability:</strong>
+                {competitor["india_status"]}
+              </div>
+
+              <div style="font-size:0.76rem;color:#64748B;margin-bottom:0.65rem;">
+                <strong>Fit breakdown:</strong>
+                Risk fit {competitor.get("risk_fit", competitor["score"]):.0f}/100 ·
+                Context relevance {competitor.get("context_relevance", 0):.0f}/100
+              </div>
+
+              <div style="font-size:0.86rem;color:#0F172A;line-height:1.6;
+                          margin-bottom:0.7rem;">
+                <strong>What it covers:</strong> {what_it_covers_text}
+              </div>
+
+              <div style="background:#FEF2F2;border-left:3px solid #AD1E23;
+                          border-radius:6px;padding:0.6rem 0.85rem;margin-bottom:0.5rem;">
+                <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.06em;
+                            text-transform:uppercase;color:#AD1E23;margin-bottom:0.25rem;">
+                  Closest ICICI Lombard product
+                </div>
+                <div style="font-size:0.84rem;color:#0F172A;">
+                  {icici_equivalent_text}
+                </div>
+              </div>
+
+              <div style="background:#F0FDF4;border-left:3px solid #16A34A;
+                          border-radius:6px;padding:0.6rem 0.85rem;margin-bottom:0.5rem;">
+                <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.06em;
+                            text-transform:uppercase;color:#15803D;margin-bottom:0.25rem;">
+                  Why the competitor product is relevant
+                </div>
+                <div style="font-size:0.84rem;color:#0F172A;line-height:1.55;">
+                  {why_relevant_text}
+                </div>
+              </div>
+
+              <div style="font-size:0.76rem;color:#94A3B8;">
+                <strong>Best for:</strong> {competitor["best_for"]}
+              </div>
+
+              <div style="margin-top:0.55rem;">
+                <div style="font-size:0.68rem;font-weight:700;letter-spacing:0.06em;
+                            text-transform:uppercase;color:#64748B;margin-bottom:0.25rem;">
+                  Matched signals
+                </div>
+                {matched_signal_html}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    n_critical = sum(1 for c in competitor_recs if c["priority"] == "Critical Gap")
+    n_strategic = sum(1 for c in competitor_recs if c["priority"] == "Strategic Gap")
+    n_tactical = sum(1 for c in competitor_recs if c["priority"] == "Tactical Gap")
+
+    summary_color = "#AD1E23" if n_critical >= 3 else (
+        "#D97706" if n_critical >= 1 else "#0369A1"
+    )
+    if n_critical >= 3:
+        summary_msg = (
+            f"<strong>{n_critical} critical coverage gaps</strong> in ICICI Lombard's "
+            "current catalog for this profile. Recommend escalating these to the "
+            "product team because competitors already have filed product responses."
+        )
+    elif n_critical >= 1:
+        summary_msg = (
+            f"<strong>{n_critical} critical and {n_strategic} strategic gaps</strong>. "
+            "The IL catalog covers the foundation, but competitors offer affirmative "
+            "products in emerging-risk areas where this startup will likely face "
+            "procurement asks within 12-18 months."
+        )
+    else:
+        summary_msg = (
+            f"Only {n_strategic} strategic and {n_tactical} tactical gaps. The "
+            "existing IL catalog covers this startup's primary exposures well; "
+            "the competitive offerings are nice-to-haves, not deal blockers."
+        )
+
+    st.markdown(
+        f'<div class="verdict-card" style="margin-top:0.5rem;'
+        f'border-left:4px solid {summary_color};">'
+        f'<span class="verdict-dot" style="color:{summary_color};">&#9679;</span>'
+        f'<span>{summary_msg}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+st.markdown("---")
+
+# ── Grouped risk breakdown (4 clusters) ─────────────────────────────────
+st.markdown(
+    '<div class="section-heading">Risk Breakdown by Category</div>'
+    '<div class="section-sub">Scores grouped across four risk themes — hover for values.</div>',
+    unsafe_allow_html=True,
+)
+for group_name, group_keys in RISK_DISPLAY_GROUPS.items():
+    group_scores = {k: scores[k] for k in group_keys if k in scores}
+    if not group_scores:
+        continue
+    max_score = max(group_scores.values())
+    if max_score >= 70:
+        g_color = "#AD1E23"
+    elif max_score >= 40:
+        g_color = "#D97706"
+    else:
+        g_color = "#059669"
+    cols = st.columns(len(group_scores))
+    st.markdown(
+        f'<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;'
+        f'text-transform:uppercase;color:{g_color};margin:-0.4rem 0 0.5rem 0;">'
+        f'{group_name}</div>',
+        unsafe_allow_html=True,
+    )
+    for col, (cat, val) in zip(cols, group_scores.items()):
+        col.metric(cat, f"{val:.0f}/100")
+
+# ── Risk Intelligence panel ──────────────────────────────────────────────
+st.markdown(
+    '<div class="section-heading" style="margin-top:1.25rem;">Risk Intelligence</div>'
+    '<div class="section-sub">Statistics and forecasts behind your scores — '
+    'only categories scoring 40+ are shown.</div>',
+    unsafe_allow_html=True,
+)
+
+_active_cats = [cat for cat, val in scores.items() if val >= 40]
+for cat in _active_cats:
+    stat_data = RISK_CATEGORY_STATS.get(cat, {})
+    cite_list = REGULATORY_CITATIONS.get(cat, [])
+    score_val = scores[cat]
+    if score_val >= 70:
+        badge_bg, badge_color = "#FEE2E2", "#991B1B"
+    else:
+        badge_bg, badge_color = "#FEF3C7", "#92400E"
+
+    with st.expander(f"{cat}  —  {score_val:.0f}/100"):
+        if stat_data:
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown(
+                    f'<div style="background:#F0F9FF;border-left:3px solid #0EA5E9;'
+                    f'border-radius:8px;padding:0.8rem 1rem;margin-bottom:0.6rem;">'
+                    f'<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
+                    f'text-transform:uppercase;color:#0369A1;margin-bottom:0.4rem;">Current scenario</div>'
+                    f'<p style="font-size:0.84rem;color:#0F172A;line-height:1.65;margin:0;">'
+                    f'{stat_data.get("headline","")}</p>'
+                    f'<div style="font-size:0.7rem;color:#64748B;margin-top:0.5rem;">'
+                    f'📎 {stat_data.get("source","")}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            with c2:
+                st.markdown(
+                    f'<div style="background:#F0FDF4;border-left:3px solid #22C55E;'
+                    f'border-radius:8px;padding:0.8rem 1rem;margin-bottom:0.6rem;">'
+                    f'<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
+                    f'text-transform:uppercase;color:#15803D;margin-bottom:0.4rem;">Forecast</div>'
+                    f'<p style="font-size:0.84rem;color:#0F172A;line-height:1.65;margin:0;">'
+                    f'{stat_data.get("forecast","")}</p>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+            sector_note = stat_data.get("sector_notes", {}).get(sector)
+            if sector_note:
+                st.markdown(
+                    f'<div style="background:{badge_bg};border-left:3px solid {badge_color};'
+                    f'border-radius:8px;padding:0.65rem 1rem;margin-bottom:0.6rem;">'
+                    f'<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
+                    f'text-transform:uppercase;color:{badge_color};margin-bottom:0.3rem;">'
+                    f'Why this matters for {sector}</div>'
+                    f'<p style="font-size:0.84rem;color:#0F172A;line-height:1.6;margin:0;">'
+                    f'{sector_note}</p>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+        if cite_list:
+            st.markdown(
+                '<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
+                'text-transform:uppercase;color:#94A3B8;margin:0.4rem 0 0.3rem 0;">'
+                'Statutes &amp; regulations</div>',
+                unsafe_allow_html=True,
+            )
+            for cite in cite_list:
+                st.markdown(f"- {cite}")
 
 st.markdown("---")
 
